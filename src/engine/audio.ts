@@ -58,6 +58,10 @@ export class Sfx {
     }
   }
 
+  get musicPlaying() {
+    return this.music !== null;
+  }
+
   private startMusic() {
     const ctx = this.ctx, master = this.master;
     if (!ctx || !master || this.music) return;

@@ -1,17 +1,37 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ALL_PICTURES, themeOf } from '../content';
+import { themeOf } from '../content';
 import type { PageDef } from '../content/types';
 import { sfx } from '../engine/audio';
 import { Board, type Action, type Tool } from '../engine/board';
+import { isStamp } from '../engine/brushes';
 import { paintName, SPECIALS, swatchBackground } from '../engine/paints';
 import { preparePage } from '../engine/prepare';
 import { say } from '../engine/speech';
 import type { Profile } from '../profiles';
 import { useSettings } from '../settings';
 import { del, get, set } from '../storage/db';
-import { Celebrate, type News } from './Celebrate';
+import { Celebrate } from './Celebrate';
 import { previewUrl } from './Home';
-import { CheckIcon, EraserIcon, HomeIcon, LockIcon, Pen, PlayIcon, SkipIcon, SoundIcon, SprayIcon, UndoIcon, WandIcon } from './icons';
+import { CheckIcon, EraserIcon, HomeIcon, Pen, PlayIcon, SkipIcon, SoundIcon, ToolIcon, UndoIcon, WandIcon } from './icons';
+
+/** everything in the tool tray, in order */
+const TOOLS: { id: Tool; name: string }[] = [
+  { id: 'marker', name: 'Marker' },
+  { id: 'felt', name: 'Felt pen' },
+  { id: 'crayon', name: 'Crayon' },
+  { id: 'pencil', name: 'Pencil' },
+  { id: 'paint', name: 'Paintbrush' },
+  { id: 'glitter', name: 'Glitter pen' },
+  { id: 'neon', name: 'Neon pen' },
+  { id: 'rainbow', name: 'Rainbow brush' },
+  { id: 'spray', name: 'Spray can' },
+  { id: 'stamp-star', name: 'Star stamp' },
+  { id: 'stamp-heart', name: 'Heart stamp' },
+  { id: 'stamp-flower', name: 'Flower stamp' },
+  { id: 'stamp-paw', name: 'Paw stamp' },
+  { id: 'stamp-smile', name: 'Smiley stamp' },
+  { id: 'stamp-sparkle', name: 'Sparkle stamp' },
+];
 
 export interface SavedPage {
   /** page version: progress is dropped if the artwork changes */
@@ -26,7 +46,6 @@ export interface SavedPage {
 interface Props {
   profile: Profile;
   def: PageDef;
-  stars: number;
   /** a page was finished for the first time */
   onEarned: () => void;
   autoReplay?: boolean;
@@ -34,20 +53,13 @@ interface Props {
   onNext: () => void;
 }
 
-/** what a new star unlocks */
-function unlocksAt(stars: number, profile: Profile): News[] {
-  return [
-    ...SPECIALS.filter((s) => s.unlockAt === stars).map((s) => ({ kind: 'paint' as const, id: s.id, name: s.name })),
-    ...ALL_PICTURES.filter((p) => p.surprise === stars && p.level <= profile.maxLevel).map((p) => ({ kind: 'page' as const, id: p.id, name: p.name, img: previewUrl(p) })),
-  ];
-}
-
-export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, onNext }: Props) {
+export function Coloring({ profile, def, onEarned, autoReplay, onHome, onNext }: Props) {
   const { settings, update } = useSettings();
   const wrapRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const colorRef = useRef<HTMLCanvasElement>(null);
   const hintRef = useRef<HTMLCanvasElement>(null);
+  const wetRef = useRef<HTMLCanvasElement>(null);
   const outlineRef = useRef<HTMLCanvasElement>(null);
   const fxRef = useRef<HTMLCanvasElement>(null);
   const penRef = useRef<HTMLDivElement>(null);
@@ -60,12 +72,15 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
   const [ready, setReady] = useState(false);
   const [dims, setDims] = useState<[number, number]>(def.kind === 'flag' ? [4, 3] : def.kind === 'drawing' ? [def.w, def.h] : [1, 1]);
   const [size, setSize] = useState<[number, number]>([0, 0]);
-  const [tool, setTool] = useState<Tool>('paint');
+  const [tool, setTool] = useState<Tool>('marker');
+  /** last drawing tool, to go back to after the eraser */
+  const [lastTool, setLastTool] = useState<Tool>('marker');
+  const [tray, setTray] = useState(false);
   const [magic, setMagic] = useState(settings.magic[profile.id]);
   const [color, setColor] = useState(profile.palette[0]);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [canUndo, setCanUndo] = useState(false);
-  const [celebrate, setCelebrate] = useState<News[] | null>(null);
+  const [celebrate, setCelebrate] = useState(false);
   const [tracing, setTracing] = useState(false);
   const [traceProg, setTraceProg] = useState(0);
   const [replaying, setReplaying] = useState(false);
@@ -81,7 +96,7 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
     void saveRef.current(true);
     if (settings.speak) say(def.kind === 'drawing' ? 'Well done!' : `${def.name}! Well done!`);
     if (first) onEarned();
-    setCelebrate(first ? unlocksAt(stars + 1, profile) : []);
+    setCelebrate(true);
     void board;
   };
 
@@ -92,7 +107,7 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
     let artDirty = false;
 
     const board = new Board(
-      { color: colorRef.current!, hint: hintRef.current!, outline: outlineRef.current!, fx: fxRef.current!, pen: penRef.current!, stage: sheetRef.current! },
+      { color: colorRef.current!, hint: hintRef.current!, wet: wetRef.current!, outline: outlineRef.current!, fx: fxRef.current!, pen: penRef.current!, stage: sheetRef.current! },
       { brushFrac: profile.brushFrac, autoAt: profile.autoAt, hintAfterMs: profile.hintAfterMs },
       {
         onChange: (actions, done, total) => {
@@ -220,20 +235,31 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
     if (settings.speak) say(paintName(c));
     setColor(c);
     setMagic(false);
-    if (tool === 'erase') setTool('paint');
+    if (tool === 'erase') setTool(lastTool);
+  };
+
+  const chooseTool = (t: Tool, name: string) => {
+    sfx.unlock();
+    sfx.click();
+    if (settings.speak) say(name);
+    setTool(t);
+    setLastTool(t);
+    setTray(false);
   };
 
   const replay = () => {
     const b = boardRef.current;
     if (!b || !b.actions.length) return;
-    setCelebrate(null);
+    setCelebrate(false);
     setReplaying(true);
     void b.replay().then(() => setReplaying(false));
   };
 
   const pct = tracing ? traceProg : progress.total ? progress.done / progress.total : 0;
   const busy = tracing || replaying;
-  const specials = SPECIALS.filter((s) => profile.id === 'big' || stars >= s.unlockAt);
+  const specials = SPECIALS;
+  const current = TOOLS.find((t) => t.id === lastTool) ?? TOOLS[0];
+  const tipColor = magic || color.startsWith('p:') ? '#ab47bc' : color;
 
   return (
     <div className={`coloring ${profile.id}`}>
@@ -258,21 +284,30 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
                 sfx.sparkle();
                 if (settings.speak) say(magic ? '' : 'Magic colours!');
                 setMagic((m) => !(m && tool !== 'erase'));
-                if (tool === 'erase') setTool('paint');
+                if (tool === 'erase') setTool(lastTool);
               }}
               aria-label="Magic colours"
               data-testid="magic"
             >
               <WandIcon />
             </button>
+            <button
+              className={`round tool-btn ${tray ? 'open' : ''}`}
+              disabled={busy}
+              onClick={() => {
+                sfx.unlock();
+                sfx.click();
+                if (tool === 'erase') setTool(lastTool);
+                setTray((o) => !o);
+              }}
+              aria-label={`Tools: ${current.name}`}
+              data-testid="tools"
+            >
+              <ToolIcon tool={current.id} c={tipColor} size={48} />
+            </button>
             {profile.showEraser && (
-              <button className={`round ${tool === 'erase' ? 'on' : ''}`} disabled={busy} onClick={() => setTool((t) => (t === 'erase' ? 'paint' : 'erase'))} aria-label="Eraser" data-testid="eraser">
+              <button className={`round ${tool === 'erase' ? 'on' : ''}`} disabled={busy} onClick={() => setTool((t) => (t === 'erase' ? lastTool : 'erase'))} aria-label="Eraser" data-testid="eraser">
                 <EraserIcon />
-              </button>
-            )}
-            {profile.showEraser && (
-              <button className={`round ${tool === 'spray' ? 'on' : ''}`} disabled={busy} onClick={() => setTool((t) => (t === 'spray' ? 'paint' : 'spray'))} aria-label="Spray" data-testid="spray">
-                <SprayIcon />
               </button>
             )}
           </>
@@ -292,10 +327,11 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
         <div className="sheet" ref={sheetRef} style={{ width: size[0], height: size[1] }} data-ready={ready ? '1' : '0'}>
           <canvas ref={colorRef} className="layer" />
           <canvas ref={hintRef} className="layer" data-testid="hint" />
+          <canvas ref={wetRef} className="layer" />
           <canvas ref={outlineRef} className="layer" />
           <canvas ref={fxRef} className="layer top" data-testid="canvas" />
           <div ref={penRef} className="pen">
-            <Pen />
+            <Pen tool={tool === 'erase' ? 'marker' : tool} />
           </div>
           <div className={`progress ${tracing ? 'trace' : ''}`} aria-hidden>
             <div style={{ width: `${pct * 100}%` }} />
@@ -343,38 +379,45 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
               data-testid={`swatch-${c}`}
             />
           ))}
-          {specials.map((s) => {
-            const locked = stars < s.unlockAt;
-            return (
-              <button
-                key={s.id}
-                className={`swatch special ${locked ? 'locked' : ''} ${!locked && !magic && tool !== 'erase' && color === s.id ? 'sel' : ''}`}
-                style={locked ? undefined : { background: swatchBackground(s.id) }}
-                onClick={() => (locked ? settings.speak && say(`${s.unlockAt} stars`) : pick(s.id))}
-                aria-label={locked ? `${s.name}: ${s.unlockAt} stars` : s.name}
-                data-testid={`swatch-${s.id}`}
-              >
-                {locked && (
-                  <span className="lock-num">
-                    <LockIcon size={20} />
-                    {s.unlockAt}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {specials.map((s) => (
+            <button
+              key={s.id}
+              className={`swatch special ${!magic && tool !== 'erase' && color === s.id ? 'sel' : ''}`}
+              style={{ background: swatchBackground(s.id) }}
+              onClick={() => pick(s.id)}
+              aria-label={s.name}
+              data-testid={`swatch-${s.id}`}
+            />
+          ))}
         </div>
       </aside>
+
+      {tray && (
+        <div className="tray-backdrop" onClick={() => setTray(false)}>
+          <div className="tray" onClick={(e) => e.stopPropagation()} data-testid="tray">
+            {TOOLS.map((t) => (
+              <button
+                key={t.id}
+                className={`tray-item ${tool === t.id ? 'on' : ''} ${isStamp(t.id) ? 'stamp' : ''}`}
+                onClick={() => chooseTool(t.id, t.name)}
+                aria-label={t.name}
+                data-testid={`tool-${t.id}`}
+              >
+                <ToolIcon tool={t.id} c={t.id === 'rainbow' ? '#e53935' : tipColor} size={profile.showNames ? 50 : 60} />
+                {profile.showNames && <span>{t.name}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {celebrate && (
         <Celebrate
           name={profile.showNames ? def.name : undefined}
-          news={celebrate}
-          showNames={profile.showNames}
           onHome={onHome}
           onNext={onNext}
           onReplay={replay}
-          onStay={() => setCelebrate(null)}
+          onStay={() => setCelebrate(false)}
         />
       )}
     </div>

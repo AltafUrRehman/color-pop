@@ -115,15 +115,184 @@ export const Avatar = ({ kind, size = 150 }: { kind: 'chick' | 'lion'; size?: nu
     </svg>
   );
 
-/** marker that follows the finger while scribbling; its tip sits at the element origin */
-export const Pen = () => (
-  <svg width="44" height="150" viewBox="0 0 44 150" aria-hidden>
-    <path d="M13 116 22 148 31 116Z" style={{ fill: 'var(--pen)' }} stroke="#333" strokeWidth="2.5" strokeLinejoin="round" />
-    <rect x="10" y="92" width="24" height="26" rx="3" fill="#f1f1f1" stroke="#333" strokeWidth="2.5" />
-    <rect x="6" y="8" width="32" height="88" rx="11" style={{ fill: 'var(--pen)' }} stroke="#333" strokeWidth="2.5" />
-    <rect x="11" y="14" width="7" height="70" rx="3.5" fill="#fff" opacity=".35" />
-  </svg>
-);
+/** the tool that follows the finger while painting; its tip sits at the element origin (22, 148) */
+export const Pen = ({ tool = 'marker' }: { tool?: string }) => {
+  const ink = { fill: 'var(--pen)' };
+  const line = { stroke: '#333', strokeWidth: 2.5, strokeLinejoin: 'round' as const };
+  let body: ReactNode;
+  if (tool === 'crayon') {
+    body = (
+      <>
+        <path d="M12 112 22 148 32 112Z" style={ink} {...line} />
+        <rect x="10" y="20" width="24" height="94" rx="4" style={ink} {...line} />
+        <rect x="10" y="44" width="24" height="44" fill="#fff" opacity=".85" {...line} />
+        <path d="M10 52h24M10 80h24" stroke="var(--pen)" strokeWidth="3" />
+      </>
+    );
+  } else if (tool === 'pencil') {
+    body = (
+      <>
+        <path d="M14 116 22 148 30 116Z" fill="#ffcc80" {...line} />
+        <path d="M19.5 138 22 148 24.5 138Z" style={ink} />
+        <rect x="13" y="16" width="18" height="100" rx="2" fill="#fdd835" {...line} />
+        <path d="M19 16v100M25 16v100" stroke="#f9a825" strokeWidth="2" />
+        <rect x="13" y="6" width="18" height="12" rx="3" fill="#f48fb1" {...line} />
+      </>
+    );
+  } else if (tool === 'paint' || tool === 'rainbow') {
+    body = (
+      <>
+        <path d="M14 112c-2 14 4 28 8 36 4-8 10-22 8-36Z" style={tool === 'rainbow' ? { fill: 'url(#pen-rb)' } : ink} {...line} />
+        <rect x="13" y="94" width="18" height="20" rx="2" fill="#cfd8dc" {...line} />
+        <rect x="16" y="6" width="12" height="90" rx="6" fill="#a1662f" {...line} />
+        <defs>
+          <linearGradient id="pen-rb" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="#e53935" /><stop offset=".33" stopColor="#fdd835" /><stop offset=".66" stopColor="#43a047" /><stop offset="1" stopColor="#1e88e5" />
+          </linearGradient>
+        </defs>
+      </>
+    );
+  } else if (tool === 'spray') {
+    body = (
+      <>
+        <rect x="8" y="60" width="28" height="80" rx="8" style={ink} {...line} />
+        <rect x="14" y="46" width="16" height="16" rx="3" fill="#eceff1" {...line} />
+        <path d="M16 140h12" stroke="#333" strokeWidth="2.5" />
+      </>
+    );
+  } else if (tool.startsWith('stamp')) {
+    body = (
+      <>
+        <rect x="6" y="122" width="32" height="24" rx="5" style={ink} {...line} />
+        <rect x="16" y="78" width="12" height="46" rx="3" fill="#a1662f" {...line} />
+        <circle cx="22" cy="70" r="14" fill="#a1662f" {...line} />
+      </>
+    );
+  } else {
+    // marker, felt pen, glitter pen, neon pen
+    const w = tool === 'marker' ? 32 : 22, x = 22 - w / 2;
+    body = (
+      <>
+        <path d={tool === 'marker' ? 'M13 116 22 148 31 116Z' : 'M17 116 22 148 27 116Z'} style={ink} {...line} />
+        <rect x={x + 4} y="92" width={w - 8} height="26" rx="3" fill="#f1f1f1" {...line} />
+        <rect x={x} y="8" width={w} height="88" rx="11" style={ink} {...line} />
+        <rect x={x + 5} y="14" width="6" height="70" rx="3" fill="#fff" opacity=".35" />
+        {tool === 'glitter' && <path d="M22 30l2 5 5 2-5 2-2 5-2-5-5-2 5-2ZM20 60l1.5 3.5 3.5 1.5-3.5 1.5L20 70l-1.5-3.5L15 65l3.5-1.5Z" fill="#fff" />}
+      </>
+    );
+  }
+  return (
+    <svg width="44" height="150" viewBox="0 0 44 150" className={tool === 'neon' ? 'neon' : undefined} aria-hidden>
+      {body}
+    </svg>
+  );
+};
+
+/** buttons in the tool tray; `c` colours the tip */
+export const ToolIcon = ({ tool, c, size = 52 }: { tool: string; c: string; size?: number }) => {
+  const line = { stroke: '#333', strokeWidth: 2, strokeLinejoin: 'round' as const };
+  const stamp = (d: ReactNode) => (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+      <g fill={c} {...line}>{d}</g>
+    </svg>
+  );
+  switch (tool) {
+    case 'stamp-star':
+      return stamp(<path d="M24 5l5.6 12 13 1.4-9.7 8.8 2.7 12.8L24 33.6 12.4 40l2.7-12.8-9.7-8.8 13-1.4Z" />);
+    case 'stamp-heart':
+      return stamp(<path d="M24 42C10 32 5 24 8 16c3-7 12-8 16-1 4-7 13-6 16 1 3 8-2 16-16 26Z" />);
+    case 'stamp-flower':
+      return stamp(<>{[0, 72, 144, 216, 288].map((a) => <circle key={a} cx="24" cy="13" r="8" transform={`rotate(${a} 24 24)`} />)}<circle cx="24" cy="24" r="6" fill="#fff59d" /></>);
+    case 'stamp-paw':
+      return stamp(<><ellipse cx="24" cy="31" rx="10" ry="8.5" />{[[12, 21], [19, 12], [29, 12], [36, 21]].map(([x, y]) => <circle key={x} cx={x} cy={y} r="4.6" />)}</>);
+    case 'stamp-smile':
+      return stamp(<><circle cx="24" cy="24" r="18" /><circle cx="18" cy="20" r="2.4" fill="#333" stroke="none" /><circle cx="30" cy="20" r="2.4" fill="#333" stroke="none" /><path d="M16 28c4 6 12 6 16 0" fill="none" strokeWidth="2.6" strokeLinecap="round" /></>);
+    case 'stamp-sparkle':
+      return stamp(<path d="M24 4l4 15 15 5-15 5-4 15-4-15-15-5 15-5Z" />);
+    case 'spray':
+      return (
+        <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+          <rect x="13" y="18" width="16" height="25" rx="4" fill={c} {...line} />
+          <rect x="16" y="11" width="10" height="7" rx="2" fill="#eceff1" {...line} />
+          {[[35, 8], [39, 13], [34, 16], [41, 7], [42, 18]].map(([x, y]) => <circle key={x * y} cx={x} cy={y} r="1.6" fill={c} />)}
+        </svg>
+      );
+  }
+  // brushes: drawn upright with the tip at the bottom, then tilted
+  const ln = { stroke: '#333', strokeWidth: 1.8, strokeLinejoin: 'round' as const };
+  let t: ReactNode;
+  switch (tool) {
+    case 'felt':
+    case 'glitter':
+    case 'neon':
+      t = (
+        <>
+          <rect x="20" y="3" width="8" height="31" rx="3" fill={c} {...ln} />
+          <rect x="20.5" y="32" width="7" height="5" fill="#eee" {...ln} />
+          <path d="M21.5 37 24 46 26.5 37Z" fill={c} {...ln} />
+        </>
+      );
+      break;
+    case 'crayon':
+      t = (
+        <>
+          <rect x="17" y="6" width="14" height="29" rx="2" fill={c} {...ln} />
+          <rect x="17" y="13" width="14" height="15" fill="#fff" {...ln} />
+          <path d="M17 17h14M17 24h14" stroke={c} strokeWidth="2" />
+          <path d="M18 35 24 46 30 35Z" fill={c} {...ln} />
+        </>
+      );
+      break;
+    case 'pencil':
+      t = (
+        <>
+          <rect x="19" y="1" width="10" height="7" rx="2.5" fill="#f48fb1" {...ln} />
+          <rect x="19" y="7" width="10" height="27" fill="#fdd835" {...ln} />
+          <path d="M22.3 7v27M25.7 7v27" stroke="#f9a825" strokeWidth="1.4" />
+          <path d="M19 34 24 45 29 34Z" fill="#ffcc80" {...ln} />
+          <path d="M22.4 41.5 24 45.5 25.6 41.5Z" fill={c} />
+        </>
+      );
+      break;
+    case 'paint':
+    case 'rainbow':
+      t = (
+        <>
+          <rect x="21.5" y="1" width="5" height="25" rx="2.5" fill="#a1662f" {...ln} />
+          <rect x="19.5" y="24" width="9" height="7" rx="1" fill="#cfd8dc" {...ln} />
+          <path d="M19.5 31c-1.5 6 1.5 11 4.5 15 3-4 6-9 4.5-15Z" fill={tool === 'rainbow' ? 'url(#rb-grad)' : c} {...ln} />
+        </>
+      );
+      break;
+    default:
+      // marker
+      t = (
+        <>
+          <rect x="16.5" y="3" width="15" height="29" rx="4" fill={c} {...ln} />
+          <rect x="18" y="31" width="12" height="5" fill="#eee" {...ln} />
+          <path d="M18.5 36 21 46 30 41 29.5 36Z" fill={c} {...ln} />
+          <rect x="19" y="6" width="3.5" height="22" rx="1.7" fill="#fff" opacity=".4" stroke="none" />
+        </>
+      );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+      <defs>
+        <linearGradient id="rb-grad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="#e53935" /><stop offset=".35" stopColor="#fdd835" /><stop offset=".65" stopColor="#43a047" /><stop offset="1" stopColor="#1e88e5" />
+        </linearGradient>
+      </defs>
+      {tool === 'neon' && <circle cx="12" cy="37" r="11" fill={c} opacity=".28" />}
+      <g transform="rotate(40 24 24)">{t}</g>
+      {tool === 'glitter' && (
+        <g fill="#ffca28" stroke="#333" strokeWidth="1" strokeLinejoin="round">
+          <path d="M8 28l1.6 3.4 3.4 1.6-3.4 1.6L8 38l-1.6-3.4L3 33l3.4-1.6Z" />
+          <path d="M17 41l1 2 2 1-2 1-1 2-1-2-2-1 2-1Z" />
+        </g>
+      )}
+    </svg>
+  );
+};
 
 export const SprayIcon = () => (
   <S>

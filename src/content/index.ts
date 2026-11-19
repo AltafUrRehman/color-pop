@@ -11,8 +11,8 @@ export type Category = 'pictures' | 'flags' | 'mine' | 'gallery';
 const byLevel = <T extends { level: Level }>(list: T[]) =>
   list.map((p, i) => [p, i] as const).sort((a, b) => a[0].level - b[0].level || a[1] - b[1]).map(([p]) => p);
 
-/** all built-in pictures, easiest first; surprise pages last within their level */
-export const ALL_PICTURES: PictureDef[] = byLevel([...PICTURES, ...MORE_PICTURES, ...PICTURES3, ...PICTURES4, ...MANDALAS].sort((a, b) => (a.surprise ? 1 : 0) - (b.surprise ? 1 : 0)));
+/** all built-in pictures, easiest first */
+export const ALL_PICTURES: PictureDef[] = byLevel([...PICTURES, ...MORE_PICTURES, ...PICTURES3, ...PICTURES4, ...MANDALAS]);
 export const ALL_FLAGS = byLevel(FLAGS);
 
 export const PAGES: PageDef[] = [...ALL_PICTURES, ...ALL_FLAGS];
@@ -42,4 +42,3 @@ export const THEMES: { id: Theme; name: string }[] = [
   { id: 'fun', name: 'Fun' },
 ];
 
-export const isLocked = (p: PageDef, stars: number) => p.kind === 'picture' && !!p.surprise && stars < p.surprise;

@@ -1,15 +1,20 @@
 import { sfx } from './audio';
+import { BRUSHES, drawSegment, drawStamp, drawWet, hueColor, isBrush, isStamp, knockGrain, type Brush, type StampKind, type Tool } from './brushes';
 import { mulberry32, paintStyle } from './paints';
 import type { Prepared } from './prepare';
 
-export type Tool = 'paint' | 'erase' | 'spray';
+export type { Brush, StampKind, Tool } from './brushes';
 
-/** The action log is the source of truth for a page: saved, replayed on load, popped by undo. */
+/** The action log is the source of truth for a page: saved, replayed on load, popped by undo.
+ *  Strokes and fills without `b` are marker (that is all older saves contain). */
 export type Action =
-  | { t: 'fill'; r: number; c: string; x: number; y: number; auto?: 1 }
-  | { t: 'stroke'; r: number; c: string; w: number; p: number[] }
+  | { t: 'fill'; r: number; c: string; x: number; y: number; auto?: 1; b?: 'crayon' }
+  | { t: 'stroke'; r: number; c: string; w: number; p: number[]; b?: Brush; s?: number }
   | { t: 'spray'; r: number; c: string; w: number; s: number; p: number[] }
+  | { t: 'stamp'; r: number; c: string; k: StampKind; w: number; s: number; p: number[] }
   | { t: 'erase'; r: number };
+type StrokeAction = Extract<Action, { t: 'stroke' }>;
+type StampAction = Extract<Action, { t: 'stamp' }>;
 
 export interface BoardSettings {
   /** marker radius as a fraction of the page's long side */
@@ -31,6 +36,8 @@ export interface BoardElements {
   color: HTMLCanvasElement;
   /** glow for the next region to colour; sits between paint and lines */
   hint: HTMLCanvasElement;
+  /** the stroke being painted with a "wet" brush, until the finger lifts */
+  wet: HTMLCanvasElement;
   outline: HTMLCanvasElement;
   fx: HTMLCanvasElement;
   pen: HTMLElement;
@@ -41,8 +48,10 @@ const CELL = 12; // coverage grid cell, page px
 const TCELL = 10; // trace grid cell, page px
 const TRACE_DONE = 0.88;
 const TAP_SLOP = 8; // css px a press may wander and still count as a tap
+/** share of a region painted over (any brush) that counts it as coloured in */
+const COVER_DONE = 0.75;
 
-interface Bloom { id: number; c: string; cx: number; cy: number; rMax: number; t0: number; dur: number }
+interface Bloom { id: number; c: string; b?: 'crayon'; cx: number; cy: number; rMax: number; t0: number; dur: number }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; max: number; c: string; s: number }
 
 const easeOut = (k: number) => 1 - (1 - k) ** 3;
@@ -56,6 +65,9 @@ export class Board {
   private cctx: CanvasRenderingContext2D;
   private fctx: CanvasRenderingContext2D;
   private hctx: CanvasRenderingContext2D;
+  private wctx: CanvasRenderingContext2D;
+  private wetBox: [number, number, number, number] | null = null;
+  private wetDirty = false;
   private hintShown = false;
   private scratch = document.createElement('canvas');
   private sctx: CanvasRenderingContext2D;
@@ -65,20 +77,26 @@ export class Board {
   private done = new Uint8Array(1);
   private hasPaint = new Uint8Array(1);
   private solid: (string | null)[] = [];
+  private solidB: (string | undefined)[] = [];
 
   private gw = 0;
   private gh = 0;
   private cellRegion = new Uint16Array(0);
   private cellColor = new Uint16Array(0);
   private regionCells: Int32Array[] = [];
+  /** cells painted over by any covering brush */
+  private covered = new Uint8Array(0);
   private colorIds = new Map<string, number>();
 
-  tool: Tool = 'paint';
+  tool: Tool = 'marker';
   color = '#e53935';
   magic = true;
 
   private pointerId: number | null = null;
-  private mode: 'idle' | 'pending' | 'stroke' | 'consumed' | 'erase' | 'spray' | 'trace' = 'idle';
+  private mode: 'idle' | 'pending' | 'stroke' | 'consumed' | 'erase' | 'spray' | 'stamp' | 'trace' = 'idle';
+  private stampPress: StampAction | null = null;
+  /** length of the current stroke so far (the rainbow brush changes colour along it) */
+  private strokeDist = 0;
   private spray: { a: Extract<Action, { t: 'spray' }>; rng: () => number } | null = null;
   private trace: {
     ink: Uint8Array; revealed: Uint8Array; total: number; got: number; tw: number; th: number;
@@ -90,7 +108,7 @@ export class Board {
   private downPage = { x: 0, y: 0 };
   private lastPage = { x: 0, y: 0 };
   private lastClient = { x: 0, y: 0, t: 0 };
-  private stroke: Extract<Action, { t: 'stroke' }> | null = null;
+  private stroke: StrokeAction | null = null;
   private strokeHits = 0;
   private lastErased = 0;
 
@@ -109,6 +127,7 @@ export class Board {
     this.cctx = els.color.getContext('2d', { willReadFrequently: false })!;
     this.fctx = els.fx.getContext('2d')!;
     this.hctx = els.hint.getContext('2d')!;
+    this.wctx = els.wet.getContext('2d')!;
     this.sctx = this.scratch.getContext('2d')!;
     const fx = els.fx;
     fx.addEventListener('pointerdown', this.onDown);
@@ -123,7 +142,7 @@ export class Board {
   load(p: Prepared, actions: Action[]) {
     this.p = p;
     const W = (this.W = p.w), H = (this.H = p.h);
-    for (const c of [this.els.color, this.els.hint, this.els.outline, this.els.fx, this.scratch]) {
+    for (const c of [this.els.color, this.els.hint, this.els.wet, this.els.outline, this.els.fx, this.scratch]) {
       c.width = W;
       c.height = H;
     }
@@ -132,7 +151,9 @@ export class Board {
     this.done = new Uint8Array(n + 1);
     this.hasPaint = new Uint8Array(n + 1);
     this.solid = new Array(n + 1).fill(null);
+    this.solidB = new Array(n + 1).fill(undefined);
     this.masks.clear();
+    this.wetBox = null;
     this.hintCanvas = null;
     this.trace = null;
     this.replaying = false;
@@ -141,6 +162,7 @@ export class Board {
     this.gh = Math.ceil(H / CELL);
     this.cellRegion = new Uint16Array(this.gw * this.gh);
     this.cellColor = new Uint16Array(this.gw * this.gh);
+    this.covered = new Uint8Array(this.gw * this.gh);
     const counts = new Int32Array(n + 1);
     for (let gy = 0; gy < this.gh; gy++) {
       const py = Math.min(H - 1, gy * CELL + (CELL >> 1));
@@ -243,7 +265,7 @@ export class Board {
   }
 
   /** Draw something, keep only the part inside region `id`, composite it onto `target`. */
-  private paintMasked(id: number, x: number, y: number, w: number, h: number, draw: (s: CanvasRenderingContext2D) => void, target = this.cctx) {
+  private paintMasked(id: number, x: number, y: number, w: number, h: number, draw: (s: CanvasRenderingContext2D) => void, target = this.cctx, alpha = 1) {
     const r = this.region(id);
     const x0 = Math.max(Math.floor(x), r.x0), y0 = Math.max(Math.floor(y), r.y0);
     const x1 = Math.min(Math.ceil(x + w), r.x1), y1 = Math.min(Math.ceil(y + h), r.y1);
@@ -258,14 +280,17 @@ export class Board {
     s.globalCompositeOperation = 'destination-in';
     s.drawImage(this.mask(id), r.x0, r.y0);
     s.restore();
+    if (alpha !== 1) target.globalAlpha = alpha;
     target.drawImage(this.scratch, x0, y0, bw, bh, x0, y0, bw, bh);
+    if (alpha !== 1) target.globalAlpha = 1;
   }
 
-  private fillFull(id: number, c: string) {
+  private fillFull(id: number, c: string, b?: 'crayon') {
     const r = this.region(id);
     this.paintMasked(id, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0, (s) => {
       s.fillStyle = paintStyle(s, c);
       s.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+      if (b) knockGrain(s, b, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
     });
   }
 
@@ -278,28 +303,66 @@ export class Board {
     c.restore();
   }
 
-  /** pts = flat [x0,y0,x1,y1,...]; a single point paints a dot */
-  private paintPolyline(id: number, c: string, R: number, pts: number[]) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (let i = 0; i < pts.length; i += 2) {
-      minX = Math.min(minX, pts[i]); maxX = Math.max(maxX, pts[i]);
-      minY = Math.min(minY, pts[i + 1]); maxY = Math.max(maxY, pts[i + 1]);
+  private brushOf(a: { b?: Brush }): Brush {
+    return a.b ?? 'marker';
+  }
+
+  /** radius of a brush for this kid (relative to their marker) */
+  private brushR(b: Brush) {
+    return Math.max(3, Math.round(this.settings.brushFrac * Math.max(this.W, this.H) * BRUSHES[b].size));
+  }
+
+  /** one piece of a drawn-as-you-go stroke (also used for replay, so both look the same) */
+  private paintSegment(a: StrokeAction, ax: number, ay: number, bx: number, by: number, dist: number) {
+    const R = a.w, b = this.brushOf(a);
+    this.paintMasked(a.r, Math.min(ax, bx) - R - 2, Math.min(ay, by) - R - 2, Math.abs(bx - ax) + 2 * R + 4, Math.abs(by - ay) + 2 * R + 4, (s) =>
+      drawSegment(s, b, paintStyle(s, a.c), R, ax, ay, bx, by, dist, a.s ?? 0));
+  }
+
+  /** draws points [from, to) of a stroke the way live drawing did: a dot, then one piece per point */
+  private drawStrokeRange(a: StrokeAction, from: number, to: number) {
+    const p = a.p;
+    let dist = 0;
+    for (let i = 0; i < to; i++) {
+      if (i > 0) {
+        const ax = p[i * 2 - 2], ay = p[i * 2 - 1], bx = p[i * 2], by = p[i * 2 + 1];
+        if (i >= from) this.paintSegment(a, ax, ay, bx, by, dist);
+        dist += Math.hypot(bx - ax, by - ay);
+      } else if (from === 0) this.paintSegment(a, p[0], p[1], p[0], p[1], 0);
     }
-    this.paintMasked(id, minX - R - 2, minY - R - 2, maxX - minX + 2 * R + 4, maxY - minY + 2 * R + 4, (s) => {
-      s.fillStyle = s.strokeStyle = paintStyle(s, c);
-      s.lineWidth = 2 * R;
-      s.lineCap = 'round';
-      s.lineJoin = 'round';
-      s.beginPath();
-      if (pts.length === 2) {
-        s.arc(pts[0], pts[1], R, 0, Math.PI * 2);
-        s.fill();
-      } else {
-        s.moveTo(pts[0], pts[1]);
-        for (let i = 2; i < pts.length; i += 2) s.lineTo(pts[i], pts[i + 1]);
-        s.stroke();
-      }
-    });
+  }
+
+  /** a wet stroke (first `upto` coordinates) on the preview layer, or committed to the paint */
+  private renderWet(a: StrokeAction, commit: boolean, upto = a.p.length) {
+    const b = this.brushOf(a), spec = BRUSHES[b].wet!, pts = upto >= a.p.length ? a.p : a.p.slice(0, Math.max(2, upto));
+    const pad = a.w * (1 + spec.pad) + 4;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < pts.length; i += 2) {
+      x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]);
+      y0 = Math.min(y0, pts[i + 1]); y1 = Math.max(y1, pts[i + 1]);
+    }
+    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    if (!commit) this.clearWet();
+    this.paintMasked(a.r, x0, y0, x1 - x0, y1 - y0, (s) => drawWet(s, b, paintStyle(s, a.c), a.c, a.w, pts, a.s ?? 0), commit ? this.cctx : this.wctx, spec.alpha);
+    if (!commit) this.wetBox = [x0, y0, x1 - x0, y1 - y0];
+  }
+
+  private clearWet() {
+    if (!this.wetBox) return;
+    const [x, y, w, h] = this.wetBox;
+    this.wctx.clearRect(Math.floor(x) - 1, Math.floor(y) - 1, Math.ceil(w) + 2, Math.ceil(h) + 2);
+    this.wetBox = null;
+  }
+
+  /** the whole stroke at once (loading, undo) */
+  private drawStroke(a: StrokeAction) {
+    if (BRUSHES[this.brushOf(a)].wet) this.renderWet(a, true);
+    else this.drawStrokeRange(a, 0, a.p.length / 2);
+  }
+
+  private placeStamp(a: StampAction, i: number) {
+    const x = a.p[i * 2], y = a.p[i * 2 + 1], r = a.w;
+    this.paintMasked(a.r, x - r * 1.5, y - r * 1.5, r * 3, r * 3, (s) => drawStamp(s, a.k, paintStyle(s, a.c), r, x, y, a.s, i));
   }
 
   // ---------------------------------------------------------------- coverage
@@ -321,6 +384,47 @@ export class Board {
     let k = 0;
     for (const c of this.regionCells[id]) if (this.cellColor[c] === ci) k++;
     return k;
+  }
+
+  private coverSeg(id: number, R: number, ax: number, ay: number, bx: number, by: number) {
+    const gx0 = Math.max(0, Math.floor((Math.min(ax, bx) - R) / CELL)), gx1 = Math.min(this.gw - 1, Math.floor((Math.max(ax, bx) + R) / CELL));
+    const gy0 = Math.max(0, Math.floor((Math.min(ay, by) - R) / CELL)), gy1 = Math.min(this.gh - 1, Math.floor((Math.max(ay, by) + R) / CELL));
+    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy, R2 = R * R;
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+      const c = gy * this.gw + gx;
+      if (this.cellRegion[c] !== id || this.covered[c]) continue;
+      const px = gx * CELL + CELL / 2, py = gy * CELL + CELL / 2;
+      let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = ax + t * dx - px, qy = ay + t * dy - py;
+      if (qx * qx + qy * qy <= R2) this.covered[c] = 1;
+    }
+  }
+
+  private setCovered(id: number, v: 0 | 1) {
+    for (const c of this.regionCells[id]) this.covered[c] = v;
+  }
+
+  /** painted over enough with any brush: the region counts as coloured in */
+  private checkCovered(id: number) {
+    if (this.done[id]) return;
+    const cells = this.regionCells[id];
+    if (!cells.length) return;
+    let k = 0;
+    for (const c of cells) if (this.covered[c]) k++;
+    if (k / cells.length >= COVER_DONE) this.done[id] = 1;
+  }
+
+  /** stroke coverage, for both the scribble auto-fill (same colour) and "coloured in" (any paint) */
+  private strokeCoverage(a: StrokeAction) {
+    const spec = BRUSHES[this.brushOf(a)], p = a.p, R = a.w;
+    const ci = spec.fills ? this.colorIndex(a.c) : 0;
+    for (let i = 0; i < p.length; i += 2) {
+      const ax = i ? p[i - 2] : p[0], ay = i ? p[i - 1] : p[1];
+      if (ci) this.markCells(a.r, ci, R, ax, ay, p[i], p[i + 1]);
+      if (spec.covers) this.coverSeg(a.r, R, ax, ay, p[i], p[i + 1]);
+    }
+    if (spec.covers) this.checkCovered(a.r);
   }
 
   /** marks cells of region `id` under the segment; returns how many newly became colour `ci` */
@@ -352,18 +456,22 @@ export class Board {
   private applyInstant(a: Action) {
     const id = a.r;
     if (a.t === 'fill') {
-      this.fillFull(id, a.c);
+      this.fillFull(id, a.c, a.b);
       this.setCells(id, this.colorIndex(a.c));
+      this.setCovered(id, 1);
       this.done[id] = 1;
       this.hasPaint[id] = 1;
       this.solid[id] = a.c;
+      this.solidB[id] = a.b;
     } else if (a.t === 'stroke') {
-      const ci = this.colorIndex(a.c), p = a.p;
-      if (p.length >= 2) {
-        this.paintPolyline(id, a.c, a.w, p);
-        this.markCells(id, ci, a.w, p[0], p[1], p[0], p[1]);
-        for (let i = 2; i < p.length; i += 2) this.markCells(id, ci, a.w, p[i - 2], p[i - 1], p[i], p[i + 1]);
+      if (a.p.length >= 2) {
+        this.drawStroke(a);
+        this.strokeCoverage(a);
       }
+      this.hasPaint[id] = 1;
+      this.solid[id] = null;
+    } else if (a.t === 'stamp') {
+      for (let i = 0; i < a.p.length / 2; i++) this.placeStamp(a, i);
       this.hasPaint[id] = 1;
       this.solid[id] = null;
     } else if (a.t === 'spray') {
@@ -377,6 +485,7 @@ export class Board {
     } else {
       this.eraseRegion(id);
       this.setCells(id, 0);
+      this.setCovered(id, 0);
       this.done[id] = 0;
       this.hasPaint[id] = 0;
       this.solid[id] = null;
@@ -386,9 +495,11 @@ export class Board {
   private rebuildRegion(id: number) {
     this.eraseRegion(id);
     this.setCells(id, 0);
+    this.setCovered(id, 0);
     this.done[id] = 0;
     this.hasPaint[id] = 0;
     this.solid[id] = null;
+    this.solidB[id] = undefined;
     for (const a of this.actions) if (a.r === id) this.applyInstant(a);
   }
 
@@ -427,29 +538,39 @@ export class Board {
     return true;
   }
 
-  private startFill(id: number, c: string, x: number, y: number, auto: boolean) {
+  private startFill(id: number, c: string, x: number, y: number, auto: boolean, b?: 'crayon') {
     this.finishBlooms(id);
-    const a: Action = auto ? { t: 'fill', r: id, c, x: Math.round(x), y: Math.round(y), auto: 1 } : { t: 'fill', r: id, c, x: Math.round(x), y: Math.round(y) };
+    const a: Extract<Action, { t: 'fill' }> = { t: 'fill', r: id, c, x: Math.round(x), y: Math.round(y) };
+    if (auto) a.auto = 1;
+    if (b) a.b = b;
     this.actions.push(a);
     this.setCells(id, this.colorIndex(c));
+    this.setCovered(id, 1);
     this.done[id] = 1;
     this.hasPaint[id] = 1;
     this.solid[id] = c;
+    this.solidB[id] = b;
     const r = this.region(id);
     const rMax = Math.max(Math.hypot(x - r.x0, y - r.y0), Math.hypot(x - r.x1, y - r.y0), Math.hypot(x - r.x0, y - r.y1), Math.hypot(x - r.x1, y - r.y1));
     const frac = r.area / (this.W * this.H);
     const dur = (auto ? 230 : 320) + 520 * Math.sqrt(frac);
-    this.blooms.push({ id, c, cx: x, cy: y, rMax, t0: performance.now(), dur });
+    this.blooms.push({ id, c, b, cx: x, cy: y, rMax, t0: performance.now(), dur });
     sfx.bloom(dur / 1000);
     this.emitChange();
     this.loop();
+  }
+
+  /** the animated circles of a textured fill pile up, so redraw the region from the log instead */
+  private endBloom(b: Bloom) {
+    if (b.b) this.rebuildRegion(b.id);
+    else this.fillFull(b.id, b.c);
   }
 
   private finishBlooms(onlyId?: number) {
     for (let i = this.blooms.length - 1; i >= 0; i--) {
       const b = this.blooms[i];
       if (onlyId !== undefined && b.id !== onlyId) continue;
-      this.fillFull(b.id, b.c);
+      this.endBloom(b);
       this.blooms.splice(i, 1);
     }
   }
@@ -509,26 +630,32 @@ export class Board {
       this.showPen(e, '#ffffff');
       return;
     }
-    if (this.tool === 'spray') {
-      const id = this.regionAt(pt.x, pt.y);
+    const id = this.regionAt(pt.x, pt.y);
+    if (this.tool === 'spray' || isStamp(this.tool)) {
       if (!id || this.region(id).fixed) {
         this.mode = 'consumed';
         return;
       }
       this.finishBlooms(id);
-      const c = this.colorFor(id);
-      const R = Math.max(8, Math.round(this.settings.brushFrac * 1.5 * Math.max(this.W, this.H)));
+      const c = this.colorFor(id), seed = (Math.random() * 2 ** 31) | 0;
       const x = Math.round(pt.x), y = Math.round(pt.y);
-      const seed = (Math.random() * 2 ** 31) | 0;
-      this.spray = { a: { t: 'spray', r: id, c, w: R, s: seed, p: [x, y] }, rng: mulberry32(seed) };
-      this.paintDots(id, c, this.sprayDots(this.spray.rng, R, x, y, x, y));
-      this.mode = 'spray';
+      if (this.tool === 'spray') {
+        const R = Math.max(8, Math.round(this.settings.brushFrac * 1.5 * Math.max(this.W, this.H)));
+        this.spray = { a: { t: 'spray', r: id, c, w: R, s: seed, p: [x, y] }, rng: mulberry32(seed) };
+        this.paintDots(id, c, this.sprayDots(this.spray.rng, R, x, y, x, y));
+        this.mode = 'spray';
+        sfx.scratchStart();
+      } else {
+        const k = this.tool.slice(6) as StampKind;
+        this.stampPress = { t: 'stamp', r: id, c, k, w: Math.round(this.brushR('marker') * 1.25), s: seed, p: [x, y] };
+        this.placeStamp(this.stampPress, 0);
+        this.mode = 'stamp';
+        sfx.pop(0.004);
+      }
       this.showPen(e, c);
-      sfx.scratchStart();
       return;
     }
     this.mode = 'pending';
-    const id = this.regionAt(pt.x, pt.y);
     this.showPen(e, id ? this.colorFor(id) : this.color);
   };
 
@@ -538,6 +665,17 @@ export class Board {
     if (this.mode === 'erase') {
       const pt = this.toPage(e);
       this.eraseAt(pt);
+      return;
+    }
+    if (this.mode === 'stamp' && this.stampPress) {
+      // keep pressing and dragging: a trail of stamps
+      const a = this.stampPress, pt = this.toPage(e), n = a.p.length;
+      const x = Math.round(pt.x), y = Math.round(pt.y);
+      if (Math.hypot(x - a.p[n - 2], y - a.p[n - 1]) >= a.w * 1.8) {
+        a.p.push(x, y);
+        this.placeStamp(a, a.p.length / 2 - 1);
+        sfx.pop(0.004);
+      }
       return;
     }
     if (this.mode === 'trace' || this.mode === 'spray') {
@@ -566,24 +704,29 @@ export class Board {
     }
     if (this.mode !== 'stroke' || !this.stroke) return;
     const evs = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
-    const list = evs.length ? evs : [e];
-    const s = this.stroke, R = s.w, ci = this.colorIndex(s.c);
-    const pts: number[] = [this.lastPage.x, this.lastPage.y];
+    const s = this.stroke, R = s.w, b = this.brushOf(s), spec = BRUSHES[b], ci = spec.fills ? this.colorIndex(s.c) : 0;
     let gained = 0;
-    for (const ev of list) {
+    for (const ev of evs.length ? evs : [e]) {
       const pt = this.toPage(ev);
-      if (Math.hypot(pt.x - this.lastPage.x, pt.y - this.lastPage.y) < 1.5) continue;
-      gained += this.markCells(s.r, ci, R, this.lastPage.x, this.lastPage.y, pt.x, pt.y);
-      pts.push(pt.x, pt.y);
-      s.p.push(Math.round(pt.x), Math.round(pt.y));
-      this.lastPage = pt;
+      const x = Math.round(pt.x), y = Math.round(pt.y);
+      const ax = this.lastPage.x, ay = this.lastPage.y, len = Math.hypot(x - ax, y - ay);
+      if (len < 1.5) continue;
+      if (spec.wet) this.wetDirty = true;
+      else this.paintSegment(s, ax, ay, x, y, this.strokeDist);
+      if (ci) gained += this.markCells(s.r, ci, R, ax, ay, x, y);
+      if (spec.covers) this.coverSeg(s.r, R, ax, ay, x, y);
+      s.p.push(x, y);
+      this.strokeDist += len;
+      this.lastPage = { x, y };
     }
-    if (pts.length > 2) this.paintPolyline(s.r, s.c, R, pts);
+    if (this.wetDirty) this.loop();
+    if (b === 'rainbow') this.setPenColor(hueColor(((s.s ?? 0) % 360) + (this.strokeDist / (R * 9)) * 360));
     this.strokeHits += gained;
     const dt = Math.max(1, e.timeStamp - this.lastClient.t);
     const v = Math.hypot(e.clientX - this.lastClient.x, e.clientY - this.lastClient.y) / dt;
     this.lastClient = { x: e.clientX, y: e.clientY, t: e.timeStamp };
     sfx.scratchSpeed(v);
+    if (!spec.fills) return;
     const cells = this.regionCells[s.r].length;
     if (cells === 0 || this.strokeHits / cells >= this.settings.autoAt) this.autoComplete();
   };
@@ -591,13 +734,23 @@ export class Board {
   private onUp = (e: PointerEvent) => {
     if (e.pointerId !== this.pointerId) return;
     this.pointerId = null;
-    if (this.mode === 'pending') this.tapFill(this.downPage);
+    if (this.mode === 'pending') this.tap(this.downPage);
     else if (this.mode === 'stroke') this.endStroke();
     else if (this.mode === 'spray' && this.spray) {
       this.actions.push(this.spray.a);
       this.hasPaint[this.spray.a.r] = 1;
       this.solid[this.spray.a.r] = null;
       this.spray = null;
+      this.emitChange();
+    } else if (this.mode === 'stamp' && this.stampPress) {
+      const a = this.stampPress;
+      this.stampPress = null;
+      this.actions.push(a);
+      this.hasPaint[a.r] = 1;
+      this.solid[a.r] = null;
+      const last = a.p.length - 2;
+      this.sparkle(a.p[last], a.p[last + 1], a.c, 5);
+      this.loop();
       this.emitChange();
     }
     sfx.scratchStop();
@@ -606,6 +759,20 @@ export class Board {
     this.bumpIdle();
   };
 
+  private currentBrush(): Brush {
+    return isBrush(this.tool) ? this.tool : 'marker';
+  }
+
+  private newStroke(id: number, x: number, y: number): StrokeAction {
+    const b = this.currentBrush();
+    const a: StrokeAction = { t: 'stroke', r: id, c: this.colorFor(id), w: this.brushR(b), p: [x, y] };
+    if (b !== 'marker') {
+      a.b = b;
+      a.s = (Math.random() * 2 ** 31) | 0;
+    }
+    return a;
+  }
+
   private beginStroke() {
     const id = this.regionAt(this.downPage.x, this.downPage.y);
     if (!id || this.region(id).fixed) {
@@ -613,16 +780,23 @@ export class Board {
       return;
     }
     this.finishBlooms(id);
-    const c = this.colorFor(id);
-    const ci = this.colorIndex(c);
-    const R = Math.max(6, Math.round(this.settings.brushFrac * Math.max(this.W, this.H)));
     const x = Math.round(this.downPage.x), y = Math.round(this.downPage.y);
-    this.stroke = { t: 'stroke', r: id, c, w: R, p: [x, y] };
-    this.strokeHits = this.countCells(id, ci) + this.markCells(id, ci, R, x, y, x, y);
-    this.paintPolyline(id, c, R, [x, y]);
+    const a = this.newStroke(id, x, y), spec = BRUSHES[this.brushOf(a)], R = a.w;
+    this.stroke = a;
+    this.strokeDist = 0;
+    this.strokeHits = 0;
+    if (spec.fills) {
+      const ci = this.colorIndex(a.c);
+      this.strokeHits = this.countCells(id, ci) + this.markCells(id, ci, R, x, y, x, y);
+    }
+    if (spec.covers) this.coverSeg(id, R, x, y, x, y);
+    if (spec.wet) {
+      this.wetDirty = true;
+      this.loop();
+    } else this.paintSegment(a, x, y, x, y, 0);
     this.lastPage = { x, y };
     this.mode = 'stroke';
-    this.setPenColor(c);
+    this.setPenColor(this.brushOf(a) === 'rainbow' ? hueColor((a.s ?? 0) % 360) : a.c);
     sfx.scratchStart();
   }
 
@@ -630,10 +804,17 @@ export class Board {
     const s = this.stroke;
     this.stroke = null;
     if (!s) return;
+    if (BRUSHES[this.brushOf(s)].wet) {
+      this.wetDirty = false;
+      this.clearWet();
+      this.renderWet(s, true);
+    }
     this.actions.push(s);
     this.hasPaint[s.r] = 1;
     this.solid[s.r] = null;
+    this.checkCovered(s.r);
     this.emitChange();
+    this.checkComplete();
   }
 
   private autoComplete() {
@@ -641,20 +822,38 @@ export class Board {
     this.endStroke();
     sfx.scratchStop();
     this.mode = 'consumed';
-    this.startFill(s.r, s.c, this.lastPage.x, this.lastPage.y, true);
+    this.startFill(s.r, s.c, this.lastPage.x, this.lastPage.y, true, this.brushOf(s) === 'crayon' ? 'crayon' : undefined);
   }
 
-  private tapFill(pt: { x: number; y: number }) {
+  /** a tap: marker and crayon fill the region; the other brushes leave a dot */
+  private tap(pt: { x: number; y: number }) {
+    const b = this.currentBrush();
+    if (BRUSHES[b].fills) return this.tapFill(pt, b === 'crayon' ? 'crayon' : undefined);
+    const id = this.regionAt(pt.x, pt.y);
+    if (!id || this.region(id).fixed) return;
+    this.finishBlooms(id);
+    const a = this.newStroke(id, Math.round(pt.x), Math.round(pt.y));
+    this.drawStroke(a);
+    this.strokeCoverage(a);
+    this.actions.push(a);
+    this.hasPaint[id] = 1;
+    this.solid[id] = null;
+    sfx.pop(0.002);
+    this.emitChange();
+    this.checkComplete();
+  }
+
+  private tapFill(pt: { x: number; y: number }, b?: 'crayon') {
     const id = this.regionAt(pt.x, pt.y);
     if (!id || this.region(id).fixed) return;
     const c = this.colorFor(id);
-    if (this.solid[id] === c && !this.blooms.some((b) => b.id === id)) {
+    if (this.solid[id] === c && this.solidB[id] === b && !this.blooms.some((bl) => bl.id === id)) {
       this.sparkle(pt.x, pt.y, c, 7);
       sfx.sparkle();
       this.loop();
       return;
     }
-    this.startFill(id, c, pt.x, pt.y, false);
+    this.startFill(id, c, pt.x, pt.y, false, b);
   }
 
   private eraseAt(pt: { x: number; y: number }) {
@@ -733,6 +932,10 @@ export class Board {
   private frame = (now: number) => {
     this.raf = 0;
     if (this.destroyed) return;
+    if (this.wetDirty && this.stroke) {
+      this.wetDirty = false;
+      this.renderWet(this.stroke, false);
+    }
     let ended = false;
     for (let i = this.blooms.length - 1; i >= 0; i--) {
       const b = this.blooms[i];
@@ -743,9 +946,10 @@ export class Board {
         s.beginPath();
         s.arc(b.cx, b.cy, rad, 0, Math.PI * 2);
         s.fill();
+        if (b.b) knockGrain(s, b.b, b.cx - rad, b.cy - rad, rad * 2, rad * 2);
       });
       if (k >= 1) {
-        this.fillFull(b.id, b.c);
+        this.endBloom(b);
         this.blooms.splice(i, 1);
         const r = this.region(b.id);
         this.sparkle(r.ax, r.ay, b.c, 11);
@@ -1017,10 +1221,13 @@ export class Board {
 
   private redrawAll() {
     this.cctx.clearRect(0, 0, this.W, this.H);
+    this.clearWet();
     this.done.fill(0);
     this.hasPaint.fill(0);
     this.solid.fill(null);
+    this.solidB.fill(undefined);
     this.cellColor.fill(0);
+    this.covered.fill(0);
     for (const a of this.actions) this.applyInstant(a);
   }
 
@@ -1061,23 +1268,38 @@ export class Board {
             s.beginPath();
             s.arc(a.x, a.y, rad, 0, Math.PI * 2);
             s.fill();
+            if (a.b) knockGrain(s, a.b, a.x - rad, a.y - rad, rad * 2, rad * 2);
           });
         });
-        this.fillFull(a.r, a.c);
+        this.fillFull(a.r, a.c, a.b);
         this.sparkle(r.ax, r.ay, a.c, 6);
         sfx.pop(r.area / (this.W * this.H));
         this.loop();
       } else if (a.t === 'stroke') {
         const n = a.p.length / 2;
-        let drawn = 1;
-        this.paintPolyline(a.r, a.c, a.w, a.p.slice(0, 2));
-        await this.animate(per, (k) => {
+        if (BRUSHES[this.brushOf(a)].wet) {
+          await this.animate(per, (k) => this.renderWet(a, false, Math.max(1, Math.round(n * k)) * 2));
+          this.clearWet();
+          this.renderWet(a, true);
+        } else {
+          let drawn = 0;
+          await this.animate(per, (k) => {
+            const upto = Math.max(1, Math.round(n * k));
+            if (upto > drawn) {
+              this.drawStrokeRange(a, drawn, upto);
+              drawn = upto;
+            }
+          });
+          if (drawn < n) this.drawStrokeRange(a, drawn, n);
+        }
+      } else if (a.t === 'stamp') {
+        const n = a.p.length / 2;
+        let drawn = 0;
+        await this.animate(Math.min(per, 120 * n), (k) => {
           const upto = Math.max(1, Math.round(n * k));
-          if (upto > drawn) {
-            this.paintPolyline(a.r, a.c, a.w, a.p.slice((drawn - 1) * 2, upto * 2));
-            drawn = upto;
-          }
+          for (; drawn < upto; drawn++) this.placeStamp(a, drawn);
         });
+        sfx.pop(0.004);
       } else if (a.t === 'spray') {
         const rng = mulberry32(a.s), segs: number[][] = [this.sprayDots(rng, a.w, a.p[0], a.p[1], a.p[0], a.p[1])];
         for (let i = 2; i < a.p.length; i += 2) segs.push(this.sprayDots(rng, a.w, a.p[i - 2], a.p[i - 1], a.p[i], a.p[i + 1]));

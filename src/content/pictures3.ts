@@ -292,7 +292,7 @@ const alien: PictureDef = {
 };
 
 const ufo: PictureDef = {
-  kind: 'picture', id: 'ufo', name: 'Flying saucer', level: 1, theme: 'space', bg: '#311b92', sw: 16, surprise: 5,
+  kind: 'picture', id: 'ufo', name: 'Flying saucer', level: 1, theme: 'space', bg: '#311b92', sw: 16,
   body:
     twinkles([[120, 140, 30], [880, 160, 26], [190, 420, 18], [840, 380, 20], [100, 700, 22], [900, 690, 24]]) +
     `<path class="c" fill="#7e57c2" d="M-20,870 C250,820 750,820 1020,870 L1020,1020 L-20,1020 Z"/>` +

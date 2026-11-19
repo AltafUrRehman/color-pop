@@ -1,6 +1,6 @@
 // End-to-end smoke test in real Chrome: tap-fill, scribble auto-complete, undo, eraser, persistence,
-// trace step, spray, star unlocks (special markers, surprise pages), gallery replay, a photographed
-// drawing, the parent area (gate, names, export zip), page-prep timings and offline launch.
+// trace step, every brush and stamp (exact after replay and reload), special markers, gallery replay,
+// a photographed drawing, the parent area (gate, names, music, export zip), page-prep timings, offline.
 // Usage: npm run build && node e2e/smoke.mjs [outDir]
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -73,8 +73,22 @@ const hex = (c) => '#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0'
 const near = (a, b, tol = 6) => a.slice(0, 3).every((v, i) => Math.abs(v - b[i]) <= tol);
 const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 
+const kv = (op, key, value) => page.evaluate(([op, key, value]) => new Promise((res, rej) => {
+  const r = indexedDB.open('color-pop', 1);
+  r.onerror = () => rej(r.error);
+  r.onsuccess = () => {
+    const st = r.result.transaction('kv', op === 'get' ? 'readonly' : 'readwrite').objectStore('kv');
+    const q = op === 'get' ? st.get(key) : st.put(value, key);
+    q.onsuccess = () => res(op === 'get' ? q.result : true);
+  };
+}), [op, key, value]);
+
 try {
   await page.goto(base);
+  await page.waitForSelector('[data-testid=kid-little]');
+  // an install upgraded from v1.0, where music started off
+  await kv('put', 'settings', { sound: true, music: false, speak: true, names: { little: '', big: '' }, trace: { little: false, big: true }, magic: { little: true, big: false } });
+  await page.reload();
   await page.waitForSelector('[data-testid=kid-little]');
   await shot('01-picker');
   const kidNames = [await page.textContent('[data-testid=kid-little]'), await page.textContent('[data-testid=kid-big]')];
@@ -83,9 +97,11 @@ try {
   // ---------- little kid: tap-to-fill with magic colours ----------
   await page.tap('[data-testid=kid-little]');
   await page.waitForSelector('[data-testid=page-apple]');
+  check('music plays from the first tap, also on an install upgraded from v1.0', await page.evaluate(() => window.__musicPlaying()));
   await shot('02-home-little');
   const littleCount = await page.locator('.card').count();
-  check('little sees only easy pictures (incl. 2 surprises)', littleCount === 37, `${littleCount} cards`);
+  const littleLocked = await page.locator('.card.locked, .card .lock').count();
+  check('little sees every easy picture, none locked', littleCount === 37 && littleLocked === 0, `${littleCount} cards`);
   check('no pattern pages for the 3-year-old', (await page.locator('[data-testid=theme-patterns]').count()) === 0);
 
   await page.tap('[data-testid=page-apple]');
@@ -278,7 +294,8 @@ try {
   const bear = await regions();
   const bearReq = await required();
   const face = bear[bearReq[0] - 1];
-  await page.tap('[data-testid=spray]');
+  await page.tap('[data-testid=tools]');
+  await page.tap('[data-testid=tool-spray]');
   await page.tap('[data-testid="swatch-#5e35b1"]');
   const f0 = await toClient(face.ax - 60, face.ay - 40);
   await page.mouse.move(f0.x, f0.y);
@@ -297,10 +314,10 @@ try {
   }, [Math.round(face.ax - 60), Math.round(face.ay - 55)]);
   check('spray leaves speckles inside the region', sprayStats.acts.includes('spray') && sprayStats.on > 200 && sprayStats.off > 200, JSON.stringify(sprayStats).slice(0, 80));
   await shot('16-spray');
-  await page.tap('[data-testid=spray]');
+  await page.tap('[data-testid=tools]');
+  await page.tap('[data-testid=tool-marker]');
 
-  // ---------- stars unlock special markers and surprise pages ----------
-  const before = await page.evaluate(() => document.querySelector('[data-testid="swatch-p:rainbow"]').classList.contains('locked'));
+  // ---------- nothing is locked: stars only count finished pages ----------
   await page.evaluate(() => new Promise((res) => {
     const r = indexedDB.open('color-pop', 1);
     r.onsuccess = () => {
@@ -315,14 +332,11 @@ try {
   await page.waitForFunction(() => Number(document.querySelector('[data-testid=stars]')?.textContent) >= 7, null, { timeout: 5000 }).catch(() => undefined);
   const starsShown = Number(await page.textContent('[data-testid=stars]'));
   await page.tap('[data-testid=tab-pictures]');
-  const dragonLocked = await page.locator('[data-testid=page-dragon].locked').count();
-  const balloonLocked = await page.locator('[data-testid=page-hot-air-balloon].locked').count();
-  check('stars unlock surprise pages', starsShown >= 7 && dragonLocked === 0 && balloonLocked === 1, `stars ${starsShown}`);
-  await shot('17-home-surprises');
+  check('stars count finished pages, and no page is locked', starsShown >= 8 && (await page.locator('.card.locked, .card .lock').count()) === 0, `stars ${starsShown}`);
+  await shot('17-home');
   await page.tap('[data-testid=page-bear]');
   await ready();
-  const rainbowNow = await page.evaluate(() => document.querySelector('[data-testid="swatch-p:rainbow"]').classList.contains('locked'));
-  check('stars unlock special markers', before === true && rainbowNow === false);
+  check('all 8 special markers are open', (await page.locator('.swatch.special').count()) === 8 && (await page.locator('.swatch.locked').count()) === 0);
   await page.tap('[data-testid="swatch-p:rainbow"]');
   const bearRegs = await regions();
   const muzzle = bearRegs.filter((r) => bearReq.includes(r.id)).sort((a, b) => b.area - a.area)[1];
@@ -337,6 +351,56 @@ try {
   }, [muzzle.id, Math.round(muzzle.ax), Math.round(muzzle.y0), Math.round(muzzle.y1)]);
   check('rainbow marker paints a multi-colour pattern', colours >= 4, `${colours} colours across the region`);
   await shot('18-rainbow');
+
+  // ---------- every brush and stamp; replay and reload give back the exact picture ----------
+  await page.tap('[data-testid=home]');
+  await page.tap('[data-testid=tab-flags]');
+  await page.tap('[data-testid=page-flag-jp]');
+  await ready();
+  const jp = await page.evaluate(() => ({ w: window.__board.prepared.w, h: window.__board.prepared.h }));
+  const brushList = ['marker', 'felt', 'crayon', 'pencil', 'paint', 'glitter', 'neon', 'rainbow'];
+  const swatches = ['#e53935', '#fb8c00', '#fdd835', '#7cb342', '#2e7d32', '#4fc3f7', '#1e88e5', '#5e35b1'];
+  for (const [i, t] of brushList.entries()) {
+    await page.tap('[data-testid=tools]');
+    await page.tap(`[data-testid=tool-${t}]`);
+    await page.tap(`[data-testid="swatch-${swatches[i]}"]`);
+    const y = 50 + i * 60, a = await toClient(30, y);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    for (let k = 1; k <= 20; k++) {
+      const p = await toClient(30 + k * 13, y + Math.sin(k / 3) * 16);
+      await page.mouse.move(p.x, p.y, { steps: 2 });
+    }
+    await page.mouse.up();
+  }
+  for (const [i, k] of ['star', 'heart', 'flower', 'paw', 'smile', 'sparkle'].entries()) {
+    await page.tap('[data-testid=tools]');
+    await page.tap(`[data-testid=tool-stamp-${k}]`);
+    const p = await toClient(jp.w - 90, 60 + i * 105);
+    await page.touchscreen.tap(p.x, p.y);
+  }
+  await page.tap('[data-testid=tools]');
+  await page.tap('[data-testid=tool-crayon]');
+  const jpDisc = (await regions()).filter((r) => !r.optional).sort((a, b) => a.area - b.area)[0];
+  const dcp = await toClient(jpDisc.ax, jpDisc.ay);
+  await page.touchscreen.tap(dcp.x, dcp.y);
+  await page.waitForTimeout(1500);
+  await shot('18b-brushes');
+  const kinds = await page.evaluate(() => window.__board.actions.map((a) => a.t + ':' + (a.b ?? a.k ?? '')));
+  const want = ['stroke:', ...brushList.slice(1).map((b) => `stroke:${b}`), 'stamp:star', 'stamp:heart', 'stamp:flower', 'stamp:paw', 'stamp:smile', 'stamp:sparkle', 'fill:crayon'];
+  check('every brush and stamp paints', want.every((k) => kinds.includes(k)), kinds.join(' '));
+  const canvasHash = () => page.evaluate(() => document.querySelector('.sheet canvas').toDataURL());
+  const live = await canvasHash();
+  await page.evaluate(() => window.__board.replay());
+  const replayed = await canvasHash();
+  await page.tap('[data-testid=home]');
+  await page.tap('[data-testid=page-flag-jp]');
+  await ready();
+  await page.waitForTimeout(200);
+  const reloaded = await canvasHash();
+  check('replay and reload give back the exact picture', live === replayed && live === reloaded);
+  await page.tap('[data-testid=tools]');
+  await page.tap('[data-testid=tool-marker]');
 
   // ---------- gallery + time-lapse replay ----------
   await page.tap('[data-testid=home]');
@@ -386,6 +450,7 @@ try {
   const [qa, qb] = q.match(/\d+/g).map(Number);
   await page.click(`[data-testid=gate-${qa * qb}]`);
   await page.waitForSelector('[data-testid=parent]');
+  check('the music switch shows on', await page.isChecked('[data-testid=music] input'));
   await page.fill('[data-testid=name-little]', 'Mini');
   await page.click('[data-testid=music]');
   await shot('23-parent');
@@ -404,7 +469,8 @@ try {
   check('player names show on the picker', (await page.textContent('[data-testid=kid-little]')).includes('Mini'));
   await page.reload();
   await page.waitForSelector('[data-testid=kid-little]');
-  check('settings persist', (await page.textContent('[data-testid=kid-little]')).includes('Mini'));
+  const saved = await kv('get', 'settings');
+  check('settings persist, and the parent turning music off sticks', (await page.textContent('[data-testid=kid-little]')).includes('Mini') && saved.music === false && saved.v === 2);
 
   // ---------- a busier picture for the 7-year-old, found through the theme row ----------
   await page.tap('[data-testid=kid-big]');

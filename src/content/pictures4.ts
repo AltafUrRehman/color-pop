@@ -263,7 +263,7 @@ const princess: PictureDef = {
 const TAIL = 'M420,590 C410,720 450,840 600,860 C680,870 732,850 762,828 L742,780 C702,800 652,806 612,796 C562,782 546,722 580,590 Z';
 
 const mermaid: PictureDef = {
-  kind: 'picture', id: 'mermaid', name: 'Mermaid', level: 2, theme: 'fairy', bg: '#b2ebf2', sw: 13, surprise: 9,
+  kind: 'picture', id: 'mermaid', name: 'Mermaid', level: 2, theme: 'fairy', bg: '#b2ebf2', sw: 13,
   body:
     `<circle class="c" fill="#e0f7fa" cx="790" cy="300" r="38"/><circle class="c" fill="#e0f7fa" cx="850" cy="200" r="28"/>` +
     `<ellipse class="c" fill="#ffb74d" cx="200" cy="300" rx="58" ry="36"/><path class="c" fill="#ffb74d" d="M255,300 L310,268 L310,332 Z"/><circle class="k" fill="#222228" cx="175" cy="292" r="7"/>` +
@@ -324,7 +324,7 @@ const treasure: PictureDef = {
 };
 
 const carriage: PictureDef = {
-  kind: 'picture', id: 'carriage', name: 'Pumpkin carriage', level: 3, theme: 'fairy', bg: '#ede7f6', sw: 11, surprise: 15,
+  kind: 'picture', id: 'carriage', name: 'Pumpkin carriage', level: 3, theme: 'fairy', bg: '#ede7f6', sw: 11,
   body:
     twinkles([[120, 140, 22], [320, 90, 16], [600, 120, 18], [900, 380, 16], [70, 420, 14]]) +
     `<path class="c" fill="#fff59d" d="M833.5,56.5 A90,90 0 1 0 893.4,193.4 A75,75 0 1 1 833.5,56.5 Z"/>` +

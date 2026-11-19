@@ -10,6 +10,7 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 // test hook (only with ?test in the URL): prepare every page and report timings/region counts
 if (location.search.includes('test')) {
   Object.assign(window, {
+    __musicPlaying: async () => (await import('./engine/audio')).sfx.musicPlaying,
     __prepareAll: async () => {
       const [{ PAGES }, { preparePage }] = await Promise.all([import('./content'), import('./engine/prepare')]);
       const out = [];

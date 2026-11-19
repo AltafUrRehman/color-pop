@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { isLocked, pagesFor, THEMES, themeOf, type Category } from '../content';
+import { pagesFor, THEMES, themeOf, type Category } from '../content';
 import type { DrawingDef, PageDef, Theme } from '../content/types';
 import { flagSize, flagSvg, pictureSvg, svgUrl } from '../engine/prepare';
 import { say } from '../engine/speech';
@@ -8,7 +8,7 @@ import type { Profile } from '../profiles';
 import { useSettings } from '../settings';
 import { entries } from '../storage/db';
 import type { SavedPage } from './Coloring';
-import { Avatar, CrayonIcon, FlagIcon, GalleryIcon, LockIcon, MineIcon, PlayIcon, SoundIcon, StarIcon, ThemeIcon } from './icons';
+import { Avatar, CrayonIcon, FlagIcon, GalleryIcon, MineIcon, PlayIcon, SoundIcon, StarIcon, ThemeIcon } from './icons';
 import { MyDrawings } from './MyDrawings';
 
 interface Props {
@@ -149,29 +149,9 @@ export function Home({ profile, category, setCategory, onOpen, onSwitchKid, draw
           {pages.map((p) => {
             const s = saved[p.id];
             const thumb = s && thumbs[p.id];
-            const locked = isLocked(p, stars);
             return (
-              <button
-                key={p.id}
-                className={`card ${s?.done ? 'done' : ''} ${locked ? 'locked' : ''} ${p.kind === 'picture' && p.surprise ? 'surprise' : ''}`}
-                onClick={() => {
-                  if (locked) {
-                    if (settings.speak) say(`Collect ${(p as { surprise: number }).surprise} stars!`);
-                    return;
-                  }
-                  onOpen(p.id);
-                }}
-                data-testid={`page-${p.id}`}
-              >
+              <button key={p.id} className={`card ${s?.done ? 'done' : ''}`} onClick={() => onOpen(p.id)} data-testid={`page-${p.id}`}>
                 <img src={thumb || previewUrl(p)} alt="" draggable={false} />
-                {locked && (
-                  <span className="lock">
-                    <LockIcon size={46} />
-                    <span>
-                      <StarIcon size={26} /> {(p as { surprise: number }).surprise}
-                    </span>
-                  </span>
-                )}
                 {s?.done && (
                   <span className="badge">
                     <StarIcon size={40} />

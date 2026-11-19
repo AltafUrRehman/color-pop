@@ -14,21 +14,22 @@ It's a web app you install from Chrome (a PWA). It is one self-contained HTML fi
 | Tap | colour blooms out from the finger | same |
 | Scribble | stays inside the region and fills itself at **45 %** | fills itself at **80 %** |
 | Help | the next region glows after 2.5 s idle | the glow appears after 6 s, only in Magic mode |
-| Tools | undo | undo, eraser, spray can, ✓ "I'm done" |
+| Tools | undo, the 🖍 tool box | undo, the 🖍 tool box, eraser, ✓ "I'm done" |
 | Reading | none: colour and picture names are spoken | names are shown and spoken |
 
-**Stars unlock things.** Every finished page earns a star (shown top right):
+**The tool box** (the pen button) has 15 things to paint with, and every one stays inside the lines:
 
-| Stars | Unlocks |
+| Tool | What it does |
 |---|---|
-| 2, 4, 6, 8 | Rainbow, gold glitter, polka dots, pink glitter markers |
-| 3 | 🦄 Unicorn page |
-| 5 | 🛸 Flying saucer page |
-| 7 | 🐉 Dragon page (7+) |
-| 9 | 🧜 Mermaid page (7+) |
-| 11, 14, 17, 20 | Candy stripes, hearts, stars, galaxy markers |
-| 12 | 🎈 Hot-air balloon page (7+) |
-| 15 | 🎃 Pumpkin carriage page (7+) |
+| Marker, crayon | tap a region to fill it, or scribble and it fills itself; the crayon has a waxy grain |
+| Felt pen, pencil | thin lines for details; the pencil is grainy |
+| Paintbrush | soft see-through watercolour |
+| Glitter pen, neon pen | a sparkly line, a glowing line |
+| Rainbow brush | the colour changes as you draw |
+| Spray can | speckles |
+| Stamps | star, heart, flower, paw, smiley, sparkle: tap to stamp, drag for a trail |
+
+**Nothing is locked.** Every page and all 8 special markers (rainbow, gold glitter, polka dots, pink glitter, candy stripes, hearts, stars, galaxy) are open from the start. Each finished page earns a star (shown top right), and the stars just count them.
 
 **Also in the app:**
 
@@ -43,7 +44,7 @@ On the start screen, **press and hold the ⚙ (top right) for 1.5 seconds**, the
 
 - rename the two players (the names show on the start screen and in the export);
 - turn Magic colours and the tracing step on or off for each kid;
-- turn sound, the soft background music and the spoken names on or off;
+- turn sound, the soft background music (on by default) and the spoken names on or off;
 - hold-to-reset a kid's progress or delete their drawings;
 - **export every picture** as full-size PNGs in one zip (it lands in Downloads).
 
@@ -81,7 +82,6 @@ If installing is blocked on a supervised account, use **⋮ → Cast, save and s
 - `class="t"`: a sticker drawn on top of the lines too (white eye glints on black).
 - `level`: 1 = shown to the 3+ player (keep it to ≤ 10 big regions); 2–3 = 7+ only.
 - `bg`: the colour Magic mode uses for the background.
-- `surprise: N` (optional): the page stays locked until the kid has N stars.
 - `theme`: which filter it shows under (`animals`, `vehicles`, `fairy`, `space`, `patterns`, `fun`).
 
 Overlapping shapes are fine: the regions come from the visible lines. For a stripe inside a body, clip it to the body and re-stroke the body outline (see the fish and the rocket).
@@ -90,13 +90,14 @@ To preview the art run `node scripts/contact-sheet.mjs color sheet.png p3` (or `
 
 **Flags** live in `src/content/flags.ts`. Add one import from `flag-icons` and one line. Flags with text or detailed coats of arms make poor pages.
 
-**Kid presets** (the names, brush size, auto-fill threshold, hint delay, palette, which tools show) are in `src/profiles.ts`; a name typed in parent settings overrides the one there. The default settings (tracing, Magic, sound) are in `src/settings.ts`; the special markers and their star thresholds are in `src/engine/paints.ts`.
+**Kid presets** (the names, brush size, auto-fill threshold, hint delay, palette, which tools show) are in `src/profiles.ts`; a name typed in parent settings overrides the one there. The default settings (tracing, Magic, sound, music) are in `src/settings.ts`. The special markers are in `src/engine/paints.ts`, and the brushes and stamps are in `src/engine/brushes.ts`.
 
 ## How it works
 
 - `src/engine/segment.ts`: pure typed-array code that turns a rendered page into regions. It closes small gaps, labels connected areas, drops specks, grows regions under the lines and samples the target colours. Unit-tested in `tests/`.
 - `src/engine/prepare.ts`: renders the page SVG in the browser and runs the segmentation (~0.1–0.3 s on a fast PC, ~0.45 s median with the CPU slowed 4×).
-- `src/engine/board.ts`: the painting runtime. Every stroke, spray or fill is drawn, then masked to the region where the finger started, so paint can't cross a line. It also handles the bloom fills, the scribble-coverage auto-complete, undo (only the affected region is replayed), the trace step, the time-lapse replay, hints, sparkles and the marker sprite.
+- `src/engine/board.ts`: the painting runtime. Every stroke, spray, stamp or fill is drawn, then masked to the region where the finger started, so paint can't cross a line. It also handles the bloom fills, the scribble-coverage auto-complete, undo (only the affected region is replayed), the trace step, the time-lapse replay, hints, sparkles and the marker sprite.
+- `src/engine/brushes.ts`: the brushes and stamps. The textures (crayon and pencil grain, glitter) come from seeded random numbers and are anchored to the page, so a replay or reload redraws them pixel for pixel. The see-through and glowing brushes are drawn as one stroke on a preview layer and painted in when the finger lifts, so a line doesn't darken where it crosses itself.
 - `src/engine/paints.ts`: the special markers. Each one is a seamless tile used as a canvas pattern anchored to the page, so a replay redraws it pixel for pixel.
 - `src/engine/drawing.ts`: photo → line art (adaptive threshold for uneven light, speck and shadow removal).
 - `src/engine/audio.ts` and `speech.ts`: sounds and the background music are synthesised with Web Audio, so there are no sound files; names are spoken with the Chromebook's built-in voice.
@@ -108,8 +109,8 @@ To preview the art run `node scripts/contact-sheet.mjs color sheet.png p3` (or `
 
 ```bash
 npm test                       # unit tests: segmentation, zip export, photo -> line art
-npm run build && npm run e2e   # real Chrome, 39 checks: painting, trace, spray, unlocks, replay, themes,
-                               # photographed drawing, parent area + export, reload, offline
+npm run build && npm run e2e   # real Chrome, 43 checks: painting, every brush and stamp, trace, replay,
+                               # music, themes, photographed drawing, parent area + export, offline
 # on a Mac: CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm run e2e
 ```
 

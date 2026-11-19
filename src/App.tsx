@@ -72,14 +72,12 @@ export function App() {
   } else if (screen.name === 'color' && findDef(screen.pageId)) {
     const def = findDef(screen.pageId)!;
     const list: PageDef[] = def.kind === 'drawing' ? drawings : pagesFor(def.kind === 'flag' ? 'flags' : 'pictures', profile.maxLevel);
-    const playable = list.filter((p) => !(p.kind === 'picture' && p.surprise && stars < p.surprise));
-    const next = playable[(playable.findIndex((p) => p.id === def.id) + 1) % Math.max(1, playable.length)] ?? def;
+    const next = list[(list.findIndex((p) => p.id === def.id) + 1) % Math.max(1, list.length)] ?? def;
     body = (
       <Coloring
         key={`${profile.id}:${def.id}:${screen.replay ? 'r' : ''}`}
         profile={profile}
         def={def}
-        stars={stars}
         autoReplay={screen.replay}
         onEarned={() => setStars((s) => s + 1)}
         onHome={() => setScreen({ name: 'home' })}

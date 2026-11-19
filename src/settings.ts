@@ -3,6 +3,8 @@ import type { ProfileId } from './profiles';
 import { get, set } from './storage/db';
 
 export interface Settings {
+  /** settings format; 2 = music on by default */
+  v?: number;
   /** master sound switch (the speaker button) */
   sound: boolean;
   music: boolean;
@@ -16,8 +18,9 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  v: 2,
   sound: true,
-  music: false,
+  music: true,
   speak: true,
   names: { little: '', big: '' },
   trace: { little: false, big: true },
@@ -35,6 +38,11 @@ export async function loadSettings(): Promise<Settings> {
     magic: { ...DEFAULT_SETTINGS.magic, ...s.magic },
   };
   if (typeof s.muted === 'boolean' && s.sound === undefined) out.sound = !s.muted; // v0.1 setting
+  if (!s.v || s.v < 2) {
+    // music used to start off; turn it on once, after that the parent's choice sticks
+    out.music = true;
+    out.v = 2;
+  }
   return out;
 }
 

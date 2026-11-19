@@ -125,7 +125,7 @@ const tree: PictureDef = {
 };
 
 const unicorn: PictureDef = {
-  kind: 'picture', id: 'unicorn', name: 'Unicorn', level: 1, bg: '#f3e5f5', sw: 16, surprise: 3,
+  kind: 'picture', id: 'unicorn', name: 'Unicorn', level: 1, bg: '#f3e5f5', sw: 16,
   body:
     `<g class="s" fill="#ffd54f" stroke="none"><polygon points="${starPts(130, 160, 40, 16)}"/><polygon points="${starPts(860, 150, 34, 14)}"/><polygon points="${starPts(880, 820, 30, 12)}"/><polygon points="${starPts(120, 820, 26, 11)}"/></g>` +
     `<path class="c" fill="#ffffff" d="M390,620 C370,740 370,850 395,970 L640,970 C650,850 640,720 620,640 Z"/>` +
@@ -217,7 +217,7 @@ const penguin: PictureDef = {
 const HB = 'M500,100 C700,100 800,240 800,380 C800,520 650,620 580,690 L420,690 C350,620 200,520 200,380 C200,240 300,100 500,100 Z';
 
 const balloon: PictureDef = {
-  kind: 'picture', id: 'hot-air-balloon', name: 'Hot-air balloon', level: 2, bg: '#b3e5fc', sw: 13, surprise: 12,
+  kind: 'picture', id: 'hot-air-balloon', name: 'Hot-air balloon', level: 2, bg: '#b3e5fc', sw: 13,
   body:
     `<circle class="c" fill="#fdd835" cx="140" cy="140" r="70"/>` +
     cloud(830, 170, 0.9) + cloud(170, 640, 0.75) +
@@ -261,7 +261,7 @@ function dragonWing(dir: 1 | -1) {
 }
 
 const dragon: PictureDef = {
-  kind: 'picture', id: 'dragon', name: 'Dragon', level: 3, bg: '#fff3e0', sw: 11, surprise: 7,
+  kind: 'picture', id: 'dragon', name: 'Dragon', level: 3, bg: '#fff3e0', sw: 11,
   body:
     dragonWing(-1) + dragonWing(1) +
     `<path class="c" fill="#66bb6a" d="M330,800 C230,840 140,820 110,760 C150,780 200,770 230,730 Z"/>` +

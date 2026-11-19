@@ -17,8 +17,6 @@ export interface PictureDef {
   bg: string;
   /** stroke width in viewBox units */
   sw?: number;
-  /** surprise page: stars needed to unlock */
-  surprise?: number;
   theme?: Theme;
   body: string;
 }

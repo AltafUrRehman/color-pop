@@ -4,19 +4,17 @@
 export interface SpecialPaint {
   id: string;
   name: string;
-  /** stars needed to unlock */
-  unlockAt: number;
 }
 
 export const SPECIALS: SpecialPaint[] = [
-  { id: 'p:rainbow', name: 'Rainbow', unlockAt: 2 },
-  { id: 'p:gold', name: 'Gold glitter', unlockAt: 4 },
-  { id: 'p:dots', name: 'Polka dots', unlockAt: 6 },
-  { id: 'p:pink', name: 'Pink glitter', unlockAt: 8 },
-  { id: 'p:candy', name: 'Candy stripes', unlockAt: 11 },
-  { id: 'p:hearts', name: 'Hearts', unlockAt: 14 },
-  { id: 'p:stars', name: 'Stars', unlockAt: 17 },
-  { id: 'p:galaxy', name: 'Galaxy', unlockAt: 20 },
+  { id: 'p:rainbow', name: 'Rainbow' },
+  { id: 'p:gold', name: 'Gold glitter' },
+  { id: 'p:dots', name: 'Polka dots' },
+  { id: 'p:pink', name: 'Pink glitter' },
+  { id: 'p:candy', name: 'Candy stripes' },
+  { id: 'p:hearts', name: 'Hearts' },
+  { id: 'p:stars', name: 'Stars' },
+  { id: 'p:galaxy', name: 'Galaxy' },
 ];
 
 export const COLOR_NAMES: Record<string, string> = {

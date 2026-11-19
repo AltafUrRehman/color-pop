@@ -1,5 +1,6 @@
-// End-to-end smoke test in real Chrome: tap-fill, scribble auto-complete, undo, eraser,
-// persistence across reloads, offline launch via the service worker, page-prep timings.
+// End-to-end smoke test in real Chrome: tap-fill, scribble auto-complete, undo, eraser, persistence,
+// trace step, spray, star unlocks (special markers, surprise pages), gallery replay, a photographed
+// drawing, the parent area (gate, names, export zip), page-prep timings and offline launch.
 // Usage: npm run build && node e2e/smoke.mjs [outDir]
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -24,6 +25,22 @@ const server = createServer(async (req, res) => {
     res.end('not found');
   }
 }).listen(4321);
+
+// a fake photo of a child's drawing: uneven grey paper, wobbly pen lines
+{
+  const { Resvg } = await import('@resvg/resvg-js');
+  const { writeFileSync } = await import('node:fs');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900"><defs><radialGradient id="g" cx="40%" cy="35%" r="80%"><stop offset="0" stop-color="#f4f1ea"/><stop offset="1" stop-color="#b9b3a8"/></radialGradient></defs>
+    <rect width="1200" height="900" fill="url(#g)"/>
+    <g fill="none" stroke="#2a2a33" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M300,420 C300,250 470,170 600,190 C760,215 860,330 840,470 C820,610 690,700 560,690 C400,680 300,580 300,420 Z"/>
+      <path d="M470,380 C500,340 540,345 555,385 M650,375 C680,335 720,340 735,380"/>
+      <path d="M480,520 C540,600 650,600 710,515"/>
+      <path d="M560,690 L555,840 M420,840 L700,840 L700,860 L420,860 Z"/>
+      <path d="M140,160 L240,110 L250,230 Z"/>
+    </g></svg>`;
+  writeFileSync(join(outDir, 'drawing.png'), new Resvg(svg).render().asPng());
+}
 
 const results = [];
 const check = (name, ok, extra = '') => {
@@ -60,13 +77,15 @@ try {
   await page.goto(base);
   await page.waitForSelector('[data-testid=kid-little]');
   await shot('01-picker');
+  const kidNames = [await page.textContent('[data-testid=kid-little]'), await page.textContent('[data-testid=kid-big]')];
+  check('start screen shows Ibrahim and Fatima', kidNames[0].includes('Ibrahim') && kidNames[1].includes('Fatima'), kidNames.join(' / '));
 
   // ---------- little kid: tap-to-fill with magic colours ----------
   await page.tap('[data-testid=kid-little]');
   await page.waitForSelector('[data-testid=page-apple]');
   await shot('02-home-little');
   const littleCount = await page.locator('.card').count();
-  check('little sees only easy pictures', littleCount === 8, `${littleCount} cards`);
+  check('little sees only easy pictures (incl. 1 surprise)', littleCount === 17, `${littleCount} cards`);
 
   await page.tap('[data-testid=page-apple]');
   await ready();
@@ -150,7 +169,7 @@ try {
   await page.waitForSelector('[data-testid=page-flag-pk]');
   await shot('07-home-big-flags');
   const bigFlags = await page.locator('.card').count();
-  check('big sees all flags', bigFlags === 28, `${bigFlags} cards`);
+  check('big sees all flags', bigFlags === 40, `${bigFlags} cards`);
   await page.tap('[data-testid=page-flag-pk]');
   await ready();
   const pk = await regions();
@@ -209,12 +228,189 @@ try {
   await ready();
   await shot('11-next-japan');
 
-  // ---------- a busier picture for the 7-year-old ----------
+
+  // ---------- 7+: trace the dotted lines, then colour ----------
   await page.tap('[data-testid=home]');
+  await page.tap('[data-testid=tab-pictures]');
+  await page.tap('[data-testid=page-apple]');
+  await ready();
+  check('7+ pictures start with the trace step', await page.evaluate(() => window.__board.tracing));
+  await shot('14-trace-start');
+  const path = await page.evaluate(() => {
+    const pts = window.__board.traceTargets();
+    const out = [pts.shift()];
+    while (pts.length) {
+      const [x, y] = out[out.length - 1];
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < pts.length; i++) { const d = (pts[i][0] - x) ** 2 + (pts[i][1] - y) ** 2; if (d < bd) { bd = d; bi = i; } }
+      out.push(pts.splice(bi, 1)[0]);
+    }
+    return out;
+  });
+  let tp = await toClient(path[0][0], path[0][1]);
+  await page.mouse.move(tp.x, tp.y);
+  await page.mouse.down();
+  for (let i = 1; i < path.length; i += 2) {
+    const [x, y] = path[i];
+    const prev = path[i - 2] ?? path[0];
+    if (Math.hypot(x - prev[0], y - prev[1]) > 60) { await page.mouse.up(); tp = await toClient(x, y); await page.mouse.move(tp.x, tp.y); await page.mouse.down(); continue; }
+    tp = await toClient(x, y);
+    await page.mouse.move(tp.x, tp.y);
+    if (i % 40 === 1 && !(await page.evaluate(() => window.__board.tracing))) break;
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(900);
+  check('tracing the outline completes the trace step', !(await page.evaluate(() => window.__board.tracing)), `${path.length} ink cells`);
+  await shot('15-trace-done');
+  await page.tap('[data-testid=home]');
+  await page.tap('[data-testid=page-apple]');
+  await ready();
+  check('trace step is remembered for the page', !(await page.evaluate(() => window.__board.tracing)));
+  await page.tap('[data-testid=home]');
+  await page.tap('[data-testid=page-bear]');
+  await ready();
+  await page.tap('[data-testid=skip-trace]');
+  await page.waitForTimeout(300);
+  check('trace can be skipped', !(await page.evaluate(() => window.__board.tracing)));
+
+  // ---------- spray ----------
+  const bear = await regions();
+  const bearReq = await required();
+  const face = bear[bearReq[0] - 1];
+  await page.tap('[data-testid=spray]');
+  await page.tap('[data-testid="swatch-#5e35b1"]');
+  const f0 = await toClient(face.ax - 60, face.ay - 40);
+  await page.mouse.move(f0.x, f0.y);
+  await page.mouse.down();
+  for (let k = 0; k < 8; k++) {
+    const c = await toClient(face.ax - 60 + k * 18, face.ay - 40 + (k % 2) * 30);
+    await page.mouse.move(c.x, c.y, { steps: 3 });
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const sprayStats = await page.evaluate(([x0, y0]) => {
+    const d = document.querySelector('.sheet canvas').getContext('2d').getImageData(x0, y0, 120, 70).data;
+    let on = 0, off = 0;
+    for (let i = 3; i < d.length; i += 4) d[i] > 0 ? on++ : off++;
+    return { on, off, acts: window.__board.actions.map((a) => a.t) };
+  }, [Math.round(face.ax - 60), Math.round(face.ay - 55)]);
+  check('spray leaves speckles inside the region', sprayStats.acts.includes('spray') && sprayStats.on > 200 && sprayStats.off > 200, JSON.stringify(sprayStats).slice(0, 80));
+  await shot('16-spray');
+  await page.tap('[data-testid=spray]');
+
+  // ---------- stars unlock special markers and surprise pages ----------
+  const before = await page.evaluate(() => document.querySelector('[data-testid="swatch-p:rainbow"]').classList.contains('locked'));
+  await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.open('color-pop', 1);
+    r.onsuccess = () => {
+      const tx = r.result.transaction('kv', 'readwrite');
+      for (let i = 0; i < 7; i++) tx.objectStore('kv').put({ v: 'x', actions: [], done: true, at: 1 }, `progress:big:fake-${i}`);
+      tx.oncomplete = () => res(true);
+    };
+  }));
+  await page.tap('[data-testid=home]');
+  await page.tap('.avatar-btn');
+  await page.tap('[data-testid=kid-big]');
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid=stars]')?.textContent) >= 7, null, { timeout: 5000 }).catch(() => undefined);
+  const starsShown = Number(await page.textContent('[data-testid=stars]'));
+  await page.tap('[data-testid=tab-pictures]');
+  const dragonLocked = await page.locator('[data-testid=page-dragon].locked').count();
+  const balloonLocked = await page.locator('[data-testid=page-hot-air-balloon].locked').count();
+  check('stars unlock surprise pages', starsShown >= 7 && dragonLocked === 0 && balloonLocked === 1, `stars ${starsShown}`);
+  await shot('17-home-surprises');
+  await page.tap('[data-testid=page-bear]');
+  await ready();
+  const rainbowNow = await page.evaluate(() => document.querySelector('[data-testid="swatch-p:rainbow"]').classList.contains('locked'));
+  check('stars unlock special markers', before === true && rainbowNow === false);
+  await page.tap('[data-testid="swatch-p:rainbow"]');
+  const bearRegs = await regions();
+  const muzzle = bearRegs.filter((r) => bearReq.includes(r.id)).sort((a, b) => b.area - a.area)[1];
+  const mc = await toClient(muzzle.ax, muzzle.ay);
+  await page.touchscreen.tap(mc.x, mc.y);
+  await page.waitForTimeout(1200);
+  // rainbow bands run across, so walk down through the region
+  const colours = await page.evaluate(([id, x, y0, y1]) => {
+    const b = window.__board, set = new Set();
+    for (let y = y0; y < y1; y += 3) if (b.prepared.labels[y * b.prepared.w + x] === id) set.add(b.pixel(x, y).slice(0, 3).join(','));
+    return set.size;
+  }, [muzzle.id, Math.round(muzzle.ax), Math.round(muzzle.y0), Math.round(muzzle.y1)]);
+  check('rainbow marker paints a multi-colour pattern', colours >= 4, `${colours} colours across the region`);
+  await shot('18-rainbow');
+
+  // ---------- gallery + time-lapse replay ----------
+  await page.tap('[data-testid=home]');
+  await page.tap('[data-testid=tab-gallery]');
+  await page.waitForSelector('[data-testid=gallery-flag-pk]');
+  await shot('19-gallery');
+  await page.tap('[data-testid=gallery-flag-pk]');
+  await ready();
+  const replayStarted = await page.waitForFunction(() => window.__board && window.__board.replaying, null, { timeout: 4000 }).then(() => true, () => false);
+  await shot('20-replay');
+  await page.waitForFunction(() => !window.__board.replaying, null, { timeout: 15000 });
+  const pkAfter = await Promise.all(pkReq.map(async (id) => near(await pixel(pk[id - 1].ax, pk[id - 1].ay), rgb(pk[id - 1].color), 8)));
+  check('gallery replays the page and ends on the finished picture', replayStarted && pkAfter.every(Boolean));
+  await page.tap('[data-testid=home]');
+
+  // ---------- my drawings: photo of a paper drawing becomes a page ----------
+  await page.tap('[data-testid=tab-mine]');
+  await page.tap('[data-testid=add-drawing]');
+  await page.waitForSelector('[data-testid=add-modal]');
+  await page.setInputFiles('[data-testid=file-input]', join(outDir, 'drawing.png'));
+  await page.waitForSelector('[data-testid=drawing-preview]', { timeout: 10000 });
+  await shot('21-drawing-preview');
+  await page.tap('[data-testid=use-drawing]');
+  await ready();
+  const dRegs = await required();
+  check('a photographed drawing becomes a colourable page', dRegs.length >= 3, `${dRegs.length} regions`);
+  const dr = (await regions())[dRegs[0] - 1];
+  const dc = await toClient(dr.ax, dr.ay);
+  await page.tap('[data-testid=magic]');
+  await page.touchscreen.tap(dc.x, dc.y);
+  await page.waitForTimeout(1200);
+  check('the drawing can be coloured', (await pixel(dr.ax, dr.ay))[3] === 255);
+  await shot('22-drawing-coloured');
+  await page.tap('[data-testid=home]');
+  await page.waitForTimeout(500);
+  check('the drawing is listed under My drawings', (await page.locator('.mine .card-wrap').count()) === 1);
+
+  // ---------- parent area: gate, names, music, export ----------
+  await page.tap('.avatar-btn');
+  const gear = await page.locator('.gear').boundingBox();
+  await page.mouse.move(gear.x + 20, gear.y + 20);
+  await page.mouse.down();
+  await page.waitForTimeout(1800);
+  await page.mouse.up();
+  await page.waitForSelector('[data-testid=gate]');
+  const q = await page.textContent('[data-testid=gate-q]');
+  const [qa, qb] = q.match(/\d+/g).map(Number);
+  await page.click(`[data-testid=gate-${qa * qb}]`);
+  await page.waitForSelector('[data-testid=parent]');
+  await page.fill('[data-testid=name-little]', 'Mini');
+  await page.click('[data-testid=music]');
+  await shot('23-parent');
+  const dl = page.waitForEvent('download', { timeout: 15000 });
+  await page.click('[data-testid=export]');
+  const file = await dl;
+  const zipPath = join(outDir, 'export.zip');
+  await file.saveAs(zipPath);
+  const zipBytes = await readFile(zipPath);
+  const zipNames = [];
+  for (let o = zipBytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])); o >= 0; o = zipBytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), o + 46)) {
+    zipNames.push(zipBytes.subarray(o + 46, o + 46 + zipBytes.readUInt16LE(o + 28)).toString('utf8'));
+  }
+  check('parent can export all pictures as a zip', zipBytes.readUInt32LE(0) === 0x04034b50 && ['Fatima/Bear.png', 'Fatima/My drawing.png', 'Mini/Apple.png'].every((n) => zipNames.includes(n)), zipNames.join(', '));
+  await page.click('[data-testid=parent-back]');
+  check('player names show on the picker', (await page.textContent('[data-testid=kid-little]')).includes('Mini'));
+  await page.reload();
+  await page.waitForSelector('[data-testid=kid-little]');
+  check('settings persist', (await page.textContent('[data-testid=kid-little]')).includes('Mini'));
+
+  // ---------- a busier picture for the 7-year-old ----------
+  await page.tap('[data-testid=kid-big]');
   await page.tap('[data-testid=tab-pictures]');
   await page.tap('[data-testid=page-owl]');
   await ready();
-  await shot('12-owl-blank');
+  await shot('12-owl-trace');
 
   // ---------- every page: prep time and region counts ----------
   const report = await page.evaluate(() => window.__prepareAll());

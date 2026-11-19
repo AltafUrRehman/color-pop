@@ -1,5 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { CrayonIcon, HomeIcon, NextIcon, StarIcon } from './icons';
+import { swatchBackground } from '../engine/paints';
+import { CrayonIcon, HomeIcon, NextIcon, PlayIcon, StarIcon } from './icons';
+
+/** something a new star just unlocked */
+export interface News {
+  kind: 'paint' | 'page';
+  id: string;
+  name: string;
+  img?: string;
+}
 
 const COLORS = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa', '#ec407a', '#4fc3f7'];
 
@@ -43,7 +52,15 @@ function confetti(canvas: HTMLCanvasElement) {
   return () => cancelAnimationFrame(raf);
 }
 
-export function Celebrate({ name, onHome, onNext, onStay }: { name?: string; onHome: () => void; onNext: () => void; onStay: () => void }) {
+export function Celebrate({ name, news, showNames, onHome, onNext, onStay, onReplay }: {
+  name?: string;
+  news: News[];
+  showNames: boolean;
+  onHome: () => void;
+  onNext: () => void;
+  onStay: () => void;
+  onReplay: () => void;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => confetti(ref.current!), []);
   return (
@@ -51,12 +68,33 @@ export function Celebrate({ name, onHome, onNext, onStay }: { name?: string; onH
       <canvas ref={ref} className="confetti" />
       <div className="cele-card">
         <div className="big-star">
-          <StarIcon size={150} />
+          <StarIcon size={140} />
         </div>
         {name && <div className="cele-name">{name}</div>}
+        {news.length > 0 && (
+          <div className="news" data-testid="news">
+            <span className="new-tag">NEW!</span>
+            {news.map((n) =>
+              n.kind === 'paint' ? (
+                <span key={n.id} className="news-item">
+                  <span className="news-swatch" style={{ background: swatchBackground(n.id) }} />
+                  {showNames && n.name}
+                </span>
+              ) : (
+                <span key={n.id} className="news-item">
+                  <img src={n.img} alt="" />
+                  {showNames && n.name}
+                </span>
+              ),
+            )}
+          </div>
+        )}
         <div className="cele-actions">
           <button className="round big" onClick={onHome} aria-label="Home">
             <HomeIcon />
+          </button>
+          <button className="round big" onClick={onReplay} aria-label="Watch replay" data-testid="replay">
+            <PlayIcon />
           </button>
           <button className="round big" onClick={onStay} aria-label="Keep colouring">
             <CrayonIcon />

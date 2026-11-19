@@ -29,6 +29,18 @@ import za from 'flag-icons/flags/4x3/za.svg?raw';
 import gb from 'flag-icons/flags/4x3/gb.svg?raw';
 import gr from 'flag-icons/flags/4x3/gr.svg?raw';
 import us from 'flag-icons/flags/4x3/us.svg?raw';
+import ae_ from 'flag-icons/flags/4x3/ae.svg?raw';
+import qa_ from 'flag-icons/flags/4x3/qa.svg?raw';
+import be_ from 'flag-icons/flags/4x3/be.svg?raw';
+import ro_ from 'flag-icons/flags/4x3/ro.svg?raw';
+import hu_ from 'flag-icons/flags/4x3/hu.svg?raw';
+import co_ from 'flag-icons/flags/4x3/co.svg?raw';
+import th_ from 'flag-icons/flags/4x3/th.svg?raw';
+import cl_ from 'flag-icons/flags/4x3/cl.svg?raw';
+import cu_ from 'flag-icons/flags/4x3/cu.svg?raw';
+import gh_ from 'flag-icons/flags/4x3/gh.svg?raw';
+import dz_ from 'flag-icons/flags/4x3/dz.svg?raw';
+import in_ from 'flag-icons/flags/4x3/in.svg?raw';
 
 const f = (code: string, name: string, level: Level, svg: string): FlagDef => ({ kind: 'flag', id: `flag-${code}`, name, level, svg });
 
@@ -61,4 +73,16 @@ export const FLAGS: FlagDef[] = [
   f('gb', 'United Kingdom', 3, gb),
   f('gr', 'Greece', 3, gr),
   f('us', 'USA', 3, us),
+  f('ae', 'United Arab Emirates', 1, ae_),
+  f('qa', 'Qatar', 1, qa_),
+  f('be', 'Belgium', 1, be_),
+  f('ro', 'Romania', 1, ro_),
+  f('hu', 'Hungary', 1, hu_),
+  f('co', 'Colombia', 1, co_),
+  f('th', 'Thailand', 2, th_),
+  f('cl', 'Chile', 2, cl_),
+  f('cu', 'Cuba', 2, cu_),
+  f('gh', 'Ghana', 2, gh_),
+  f('dz', 'Algeria', 2, dz_),
+  f('in', 'India', 2, in_),
 ];

@@ -1,30 +1,39 @@
+import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { pagesFor, type Category } from '../content';
-import type { PageDef } from '../content/types';
+import { isLocked, pagesFor, type Category } from '../content';
+import type { DrawingDef, PageDef } from '../content/types';
 import { flagSize, flagSvg, pictureSvg, svgUrl } from '../engine/prepare';
+import { say } from '../engine/speech';
 import type { Profile } from '../profiles';
+import { useSettings } from '../settings';
 import { entries } from '../storage/db';
 import type { SavedPage } from './Coloring';
-import { Avatar, CrayonIcon, FlagIcon, SoundIcon, StarIcon } from './icons';
+import { Avatar, CrayonIcon, FlagIcon, GalleryIcon, LockIcon, MineIcon, PlayIcon, SoundIcon, StarIcon } from './icons';
+import { MyDrawings } from './MyDrawings';
 
 interface Props {
   profile: Profile;
   category: Category;
   setCategory: (c: Category) => void;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, opts?: { replay?: boolean }) => void;
   onSwitchKid: () => void;
-  muted: boolean;
-  toggleMute: () => void;
+  drawings: DrawingDef[];
+  onDrawingsChanged: (openId?: string) => void;
+  stars: number;
 }
 
 export function previewUrl(def: PageDef): string {
   if (def.kind === 'picture') return svgUrl(pictureSvg(def, 'line', 300));
-  const [w, h] = flagSize(def, 300);
-  return svgUrl(flagSvg(def, w, h));
+  if (def.kind === 'flag') {
+    const [w, h] = flagSize(def, 300);
+    return svgUrl(flagSvg(def, w, h));
+  }
+  return '';
 }
 
-export function Home({ profile, category, setCategory, onOpen, onSwitchKid, muted, toggleMute }: Props) {
-  const pages = useMemo(() => pagesFor(category, profile.maxLevel), [category, profile.maxLevel]);
+export function Home({ profile, category, setCategory, onOpen, onSwitchKid, drawings, onDrawingsChanged, stars }: Props) {
+  const { settings, update } = useSettings();
+  const pages = useMemo(() => (category === 'pictures' || category === 'flags' ? pagesFor(category, profile.maxLevel) : []), [category, profile.maxLevel]);
   const [saved, setSaved] = useState<Record<string, SavedPage>>({});
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
@@ -32,10 +41,7 @@ export function Home({ profile, category, setCategory, onOpen, onSwitchKid, mute
     let alive = true;
     const urls: string[] = [];
     (async () => {
-      const [prog, th] = await Promise.all([
-        entries<SavedPage>(`progress:${profile.id}:`),
-        entries<Blob>(`thumb:${profile.id}:`),
-      ]);
+      const [prog, th] = await Promise.all([entries<SavedPage>(`progress:${profile.id}:`), entries<Blob>(`thumb:${profile.id}:`)]);
       if (!alive) return;
       const s: Record<string, SavedPage> = {};
       for (const [k, v] of prog) s[k.split(':')[2]] = v;
@@ -53,10 +59,18 @@ export function Home({ profile, category, setCategory, onOpen, onSwitchKid, mute
       alive = false;
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [profile.id]);
+  }, [profile.id, drawings]);
 
-  // stars earned across both categories
-  const doneCount = Object.values(saved).filter((s) => s.done).length;
+  const gallery = useMemo(
+    () => Object.entries(saved).filter(([id, s]) => s.actions?.length && thumbs[id]).sort((a, b) => b[1].at - a[1].at).map(([id]) => id),
+    [saved, thumbs],
+  );
+
+  const tab = (c: Category, icon: React.ReactElement, label: string) => (
+    <button className={`tab ${category === c ? 'on' : ''}`} onClick={() => setCategory(c)} aria-label={label} data-testid={`tab-${c}`}>
+      {icon}
+    </button>
+  );
 
   return (
     <div className={`home ${profile.id}`}>
@@ -65,38 +79,80 @@ export function Home({ profile, category, setCategory, onOpen, onSwitchKid, mute
           <Avatar kind={profile.avatar} size={64} />
         </button>
         <nav className="tabs">
-          <button className={`tab ${category === 'pictures' ? 'on' : ''}`} onClick={() => setCategory('pictures')} aria-label="Pictures" data-testid="tab-pictures">
-            <CrayonIcon />
-          </button>
-          <button className={`tab ${category === 'flags' ? 'on' : ''}`} onClick={() => setCategory('flags')} aria-label="Flags" data-testid="tab-flags">
-            <FlagIcon />
-          </button>
+          {tab('pictures', <CrayonIcon />, 'Pictures')}
+          {tab('flags', <FlagIcon />, 'Flags')}
+          {tab('mine', <MineIcon />, 'My drawings')}
+          {tab('gallery', <GalleryIcon />, 'Gallery')}
         </nav>
-        <div className="stars-count" aria-label={`${doneCount} finished`}>
+        <div className="stars-count" aria-label={`${stars} stars`} data-testid="stars">
           <StarIcon size={38} />
-          <span>{doneCount}</span>
+          <span>{stars}</span>
         </div>
-        <button className="round" onClick={toggleMute} aria-label={muted ? 'Sound on' : 'Sound off'}>
-          <SoundIcon muted={muted} />
+        <button className="round" onClick={() => update({ sound: !settings.sound })} aria-label={settings.sound ? 'Sound off' : 'Sound on'}>
+          <SoundIcon muted={!settings.sound} />
         </button>
       </header>
-      <main className={`grid ${category}`}>
-        {pages.map((p) => {
-          const s = saved[p.id];
-          const thumb = s && thumbs[p.id];
-          return (
-            <button key={p.id} className={`card ${s?.done ? 'done' : ''}`} onClick={() => onOpen(p.id)} data-testid={`page-${p.id}`}>
-              <img src={thumb || previewUrl(p)} alt="" draggable={false} />
-              {s?.done && (
-                <span className="badge">
-                  <StarIcon size={40} />
-                </span>
-              )}
-              {profile.showNames && <span className="card-name">{p.name}</span>}
+
+      {category === 'mine' && <MyDrawings profile={profile} drawings={drawings} saved={saved} thumbs={thumbs} onOpen={(id) => onOpen(id)} onChanged={onDrawingsChanged} />}
+
+      {category === 'gallery' && (
+        <main className="grid gallery">
+          {!gallery.length && (
+            <div className="empty">
+              <GalleryIcon />
+              <p>Pictures you colour will appear here.</p>
+            </div>
+          )}
+          {gallery.map((id) => (
+            <button key={id} className={`card ${saved[id]?.done ? 'done' : ''}`} onClick={() => onOpen(id, { replay: true })} data-testid={`gallery-${id}`}>
+              <img src={thumbs[id]} alt="" draggable={false} />
+              <span className="play-badge">
+                <PlayIcon size={30} />
+              </span>
             </button>
-          );
-        })}
-      </main>
+          ))}
+        </main>
+      )}
+
+      {(category === 'pictures' || category === 'flags') && (
+        <main className={`grid ${category}`}>
+          {pages.map((p) => {
+            const s = saved[p.id];
+            const thumb = s && thumbs[p.id];
+            const locked = isLocked(p, stars);
+            return (
+              <button
+                key={p.id}
+                className={`card ${s?.done ? 'done' : ''} ${locked ? 'locked' : ''} ${p.kind === 'picture' && p.surprise ? 'surprise' : ''}`}
+                onClick={() => {
+                  if (locked) {
+                    if (settings.speak) say(`Collect ${(p as { surprise: number }).surprise} stars!`);
+                    return;
+                  }
+                  onOpen(p.id);
+                }}
+                data-testid={`page-${p.id}`}
+              >
+                <img src={thumb || previewUrl(p)} alt="" draggable={false} />
+                {locked && (
+                  <span className="lock">
+                    <LockIcon size={46} />
+                    <span>
+                      <StarIcon size={26} /> {(p as { surprise: number }).surprise}
+                    </span>
+                  </span>
+                )}
+                {s?.done && (
+                  <span className="badge">
+                    <StarIcon size={40} />
+                  </span>
+                )}
+                {profile.showNames && <span className="card-name">{p.name}</span>}
+              </button>
+            );
+          })}
+        </main>
+      )}
     </div>
   );
 }

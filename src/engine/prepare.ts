@@ -1,4 +1,4 @@
-import type { FlagDef, PageDef, PictureDef } from '../content/types';
+import type { DrawingDef, FlagDef, PageDef, PictureDef } from '../content/types';
 import { segmentFlag, segmentLineArt, svgPalette, type Segmented } from './segment';
 
 export interface Prepared extends Segmented {
@@ -16,11 +16,13 @@ export const PAGE_SIZE = 1000;
 
 const STYLES = {
   // what the child sees before colouring; defines the regions
-  line: '<style>.c{fill:#fff !important}.s{display:none}</style>',
+  line: '<style>.c{fill:#fff !important}.s,.t{display:none}</style>',
   // the "answer key" for magic colours
-  color: '<style>.s{display:none}</style>',
-  // stickers (shines, blush, stars) that sit on top of the paint
+  color: '<style>.s,.t{display:none}</style>',
+  // stickers (shines, blush, stars) that sit on top of the paint, under the lines
   overlay: '<style>*{visibility:hidden}.s,.s *{visibility:visible}</style>',
+  // top stickers (e.g. eyes on a black head) that sit above the lines
+  top: '<style>*{visibility:hidden}.t,.t *{visibility:visible}</style>',
 };
 
 export function pictureSvg(def: PictureDef, mode: keyof typeof STYLES, size = PAGE_SIZE): string {
@@ -70,6 +72,31 @@ export function hashString(s: string): string {
   return (h >>> 0).toString(36);
 }
 
+/** cheerful colours handed out to the regions of a child's own drawing (for magic mode) */
+const DRAWING_COLORS = ['#ffca28', '#ef5350', '#42a5f5', '#66bb6a', '#ab47bc', '#ffa726', '#ec407a', '#26c6da', '#9ccc65', '#8d6e63'];
+
+async function segmentDrawing(def: DrawingDef): Promise<Segmented> {
+  const bmp = await createImageBitmap(def.ink);
+  const c = document.createElement('canvas');
+  c.width = def.w;
+  c.height = def.h;
+  const x = c.getContext('2d', { willReadFrequently: true })!;
+  x.drawImage(bmp, 0, 0, def.w, def.h);
+  const line = x.getImageData(0, 0, def.w, def.h).data;
+  // regions are paper, not background pockets: give the "answer key" an opaque white page
+  const colored = new Uint8ClampedArray(line.length).fill(255);
+  const seg = segmentLineArt(line, colored, def.w, def.h, { background: '#fff8e1', closeRadius: 2, minAreaFrac: 0.0006 });
+  seg.regions
+    .filter((r) => !r.optional && !r.fixed)
+    .sort((a, b) => b.area - a.area)
+    .forEach((r, i) => (r.color = DRAWING_COLORS[i % DRAWING_COLORS.length]));
+  return seg;
+}
+
+export function forget(id: string) {
+  cache.delete(id);
+}
+
 const cache = new Map<string, Prepared>();
 const MAX_CACHED = 6;
 
@@ -90,25 +117,31 @@ export async function preparePage(def: PageDef): Promise<Prepared> {
     ]);
     seg = segmentLineArt(line, colored, PAGE_SIZE, PAGE_SIZE, { background: def.bg });
     version = hashString(def.body + (def.sw ?? '') + def.bg + PAGE_SIZE);
-  } else {
+  } else if (def.kind === 'flag') {
     const [w, h] = flagSize(def);
     const colored = await rasterize(flagSvg(def, w, h), w, h);
     seg = segmentFlag(colored, w, h, { palette: svgPalette(def.svg) });
     version = hashString(def.svg + PAGE_SIZE);
+  } else {
+    seg = await segmentDrawing(def);
+    version = hashString(def.id + def.w + 'x' + def.h);
   }
   const ink = document.createElement('canvas');
   ink.width = seg.w;
   ink.height = seg.h;
   ink.getContext('2d')!.putImageData(new ImageData(seg.outline as Uint8ClampedArray<ArrayBuffer>, seg.w, seg.h), 0, 0);
   let outlineCanvas = ink;
-  if (def.kind === 'picture' && def.body.includes('class="s"')) {
-    // stickers go under the ink but above the paint
+  const hasS = def.kind === 'picture' && def.body.includes('class="s"');
+  const hasT = def.kind === 'picture' && def.body.includes('class="t"');
+  if (def.kind === 'picture' && (hasS || hasT)) {
+    // stickers go under the ink but above the paint; top stickers above everything
     outlineCanvas = document.createElement('canvas');
     outlineCanvas.width = seg.w;
     outlineCanvas.height = seg.h;
     const ctx = outlineCanvas.getContext('2d')!;
-    ctx.drawImage(await loadSvg(pictureSvg(def, 'overlay')), 0, 0, seg.w, seg.h);
+    if (hasS) ctx.drawImage(await loadSvg(pictureSvg(def, 'overlay')), 0, 0, seg.w, seg.h);
     ctx.drawImage(ink, 0, 0);
+    if (hasT) ctx.drawImage(await loadSvg(pictureSvg(def, 'top')), 0, 0, seg.w, seg.h);
   }
   const order = seg.regions
     .filter((r) => !r.fixed && !r.optional)

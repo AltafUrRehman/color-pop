@@ -12,6 +12,8 @@ export class Sfx {
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private scratch: Scratch | null = null;
+  private music: { bus: GainNode; timer: number; note: number } | null = null;
+  private wantMusic = false;
   muted = false;
 
   unlock() {
@@ -32,6 +34,7 @@ export class Sfx {
         this.ctx = ctx;
         this.master = master;
         this.noiseBuf = buf;
+        if (this.wantMusic) this.startMusic();
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume();
     } catch {
@@ -42,6 +45,57 @@ export class Sfx {
   setMuted(m: boolean) {
     this.muted = m;
     if (this.ctx && this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.02);
+  }
+
+  /** gentle generative music: a slow random walk over a pentatonic scale, through an echo */
+  setMusic(on: boolean) {
+    this.wantMusic = on;
+    if (on) this.startMusic();
+    else if (this.music) {
+      clearInterval(this.music.timer);
+      this.music.bus.gain.setTargetAtTime(0, this.ctx!.currentTime, 0.3);
+      this.music = null;
+    }
+  }
+
+  private startMusic() {
+    const ctx = this.ctx, master = this.master;
+    if (!ctx || !master || this.music) return;
+    const bus = ctx.createGain();
+    bus.gain.value = 0.55;
+    const delay = ctx.createDelay(1);
+    delay.delayTime.value = 0.42;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.35;
+    bus.connect(master);
+    bus.connect(delay);
+    delay.connect(fb);
+    fb.connect(delay);
+    delay.connect(master);
+    const scale = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0];
+    const m = { bus, timer: 0, note: 4 };
+    const play = (f: number, dur: number, gain: number) => {
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g);
+      g.connect(bus);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    };
+    m.timer = window.setInterval(() => {
+      if (this.muted || ctx.state !== 'running') return;
+      if (Math.random() < 0.7) {
+        m.note = Math.max(0, Math.min(scale.length - 1, m.note + [-2, -1, 1, 2][(Math.random() * 4) | 0]));
+        play(scale[m.note], 1.7, 0.045);
+      }
+      if (Math.random() < 0.12) play(scale[m.note % 5] / 2, 3, 0.03);
+    }, 540);
+    this.music = m;
   }
 
   private tone(freq: number, dur: number, o: { type?: OscillatorType; gain?: number; when?: number; slide?: number } = {}) {

@@ -124,3 +124,92 @@ export const Pen = () => (
     <rect x="11" y="14" width="7" height="70" rx="3.5" fill="#fff" opacity=".35" />
   </svg>
 );
+
+export const SprayIcon = () => (
+  <S>
+    <rect x="12" y="18" width="16" height="24" rx="4" />
+    <path d="M16 18v-5h8v5M24 11h5" />
+    <path d="M34 9h.01M38 13h.01M34 17h.01M40 7h.01M41 19h.01" strokeWidth={5} />
+  </S>
+);
+
+export const GalleryIcon = () => (
+  <svg width="54" height="54" viewBox="0 0 48 48" aria-hidden>
+    <rect x="5" y="8" width="38" height="32" rx="4" fill="#fff8e1" stroke="#6d4c41" strokeWidth="3.5" />
+    <rect x="10" y="13" width="28" height="22" rx="2" fill="#b3e5fc" stroke="#333" strokeWidth="2" />
+    <path d="M10 33l8-9 6 6 5-4 9 8Z" fill="#66bb6a" stroke="#333" strokeWidth="2" strokeLinejoin="round" />
+    <circle cx="31" cy="19" r="3" fill="#fdd835" stroke="#333" strokeWidth="1.5" />
+  </svg>
+);
+
+export const CameraIcon = ({ size = 54 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+    <path d="M6 16a4 4 0 0 1 4-4h6l3-4h10l3 4h6a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4Z" fill="#90caf9" stroke="#333" strokeWidth="2.5" strokeLinejoin="round" />
+    <circle cx="24" cy="25" r="8" fill="#fff" stroke="#333" strokeWidth="2.5" />
+    <circle cx="24" cy="25" r="3.5" fill="#1e88e5" />
+  </svg>
+);
+
+export const PictureIcon = ({ size = 54 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+    <rect x="6" y="8" width="36" height="32" rx="4" fill="#fff" stroke="#333" strokeWidth="2.5" />
+    <path d="M6 34l10-11 8 8 6-5 12 10" fill="none" stroke="#43a047" strokeWidth="3" strokeLinejoin="round" />
+    <circle cx="32" cy="17" r="4" fill="#fdd835" stroke="#333" strokeWidth="2" />
+  </svg>
+);
+
+export const MineIcon = () => (
+  <svg width="54" height="54" viewBox="0 0 48 48" aria-hidden>
+    <rect x="8" y="6" width="30" height="36" rx="3" fill="#fff" stroke="#333" strokeWidth="2.5" />
+    <path d="M14 30c3-6 6-10 9-6s5 1 8-4" fill="none" stroke="#e53935" strokeWidth="3" strokeLinecap="round" />
+    <circle cx="20" cy="16" r="4" fill="none" stroke="#1e88e5" strokeWidth="2.5" />
+    <g transform="rotate(35 36 34)"><rect x="33" y="22" width="7" height="20" rx="2" fill="#fdd835" stroke="#333" strokeWidth="2" /><path d="M33 42l3.5 5 3.5-5Z" fill="#333" /></g>
+  </svg>
+);
+
+export const LockIcon = ({ size = 22 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+    <rect x="9" y="21" width="30" height="22" rx="5" fill="#ffca28" stroke="#5d4037" strokeWidth="3.5" />
+    <path d="M16 21v-6a8 8 0 0 1 16 0v6" fill="none" stroke="#5d4037" strokeWidth="4.5" />
+  </svg>
+);
+
+export const PlayIcon = ({ size = 40 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+    <path d="M15 9v30l25-15Z" fill="currentColor" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
+  </svg>
+);
+
+export const SkipIcon = () => (
+  <S>
+    <path d="M10 10l18 14-18 14Z" fill="currentColor" strokeWidth={3} />
+    <path d="M36 10v28" strokeWidth={5} />
+  </S>
+);
+
+export const GearIcon = ({ size = 34 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="4" aria-hidden>
+    <circle cx="24" cy="24" r="6" />
+    <path d="M24 5v6M24 37v6M5 24h6M37 24h6M10.5 10.5l4.2 4.2M33.3 33.3l4.2 4.2M10.5 37.5l4.2-4.2M33.3 14.7l4.2-4.2" strokeLinecap="round" />
+    <circle cx="24" cy="24" r="13" />
+  </svg>
+);
+
+export const TrashIcon = ({ size = 26 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M8 13h32M18 13V8h12v5M12 13l2 28h20l2-28M20 20v14M28 20v14" />
+  </svg>
+);
+
+export const PlusIcon = () => (
+  <svg width="70" height="70" viewBox="0 0 48 48" aria-hidden>
+    <circle cx="24" cy="24" r="20" fill="#66bb6a" stroke="#2e7d32" strokeWidth="2.5" />
+    <path d="M24 14v20M14 24h20" stroke="#fff" strokeWidth="5" strokeLinecap="round" />
+  </svg>
+);
+
+export const BackIcon = () => (
+  <S>
+    <path d="M30 10 16 24l14 14" strokeWidth={6} />
+  </S>
+);

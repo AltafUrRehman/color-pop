@@ -14,6 +14,8 @@ export interface PictureDef {
   bg: string;
   /** stroke width in viewBox units */
   sw?: number;
+  /** surprise page: stars needed to unlock */
+  surprise?: number;
   body: string;
 }
 
@@ -25,4 +27,17 @@ export interface FlagDef {
   svg: string;
 }
 
-export type PageDef = PictureDef | FlagDef;
+/** a child's own paper drawing, photographed and turned into line art */
+export interface DrawingDef {
+  kind: 'drawing';
+  id: string;
+  name: string;
+  level: Level;
+  /** black-on-transparent PNG */
+  ink: Blob;
+  w: number;
+  h: number;
+  created: number;
+}
+
+export type PageDef = PictureDef | FlagDef | DrawingDef;

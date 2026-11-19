@@ -88,3 +88,9 @@ export function persist() {
     /* ignore */
   }
 }
+
+/** delete every key that starts with prefix */
+export async function delPrefix(prefix: string): Promise<void> {
+  const keys = (await entries<unknown>(prefix)).map(([k]) => k);
+  for (const k of keys) await del(k);
+}

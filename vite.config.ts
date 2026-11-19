@@ -19,8 +19,11 @@ function stampServiceWorker(): Plugin {
   };
 }
 
+const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version: string };
+
 export default defineConfig({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react(), viteSingleFile(), stampServiceWorker()],
   build: { target: 'es2022', chunkSizeWarningLimit: 4000 },
 });

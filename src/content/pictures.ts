@@ -3,10 +3,10 @@ import type { PictureDef } from './types';
 // Drawing conventions (see types.ts): class "c" = colourable (fill = magic colour),
 // "k" = black detail, "s" = sticker overlay drawn on top of the paint (shines, blush, stars).
 
-const P = (n: number) => Math.round(n * 10) / 10;
-const rad = (deg: number) => (deg * Math.PI) / 180;
+export const P = (n: number) => Math.round(n * 10) / 10;
+export const rad = (deg: number) => (deg * Math.PI) / 180;
 
-function starPts(cx: number, cy: number, R: number, r: number, n = 5, rot = -90) {
+export function starPts(cx: number, cy: number, R: number, r: number, n = 5, rot = -90) {
   const pts: string[] = [];
   for (let i = 0; i < n * 2; i++) {
     const a = rad(rot + (i * 180) / n), rr = i % 2 ? r : R;
@@ -16,7 +16,7 @@ function starPts(cx: number, cy: number, R: number, r: number, n = 5, rot = -90)
 }
 
 /** cute face: eyes with shine, smile, blush stickers */
-function face(cx: number, cy: number, s = 1, o: { blush?: boolean; gap?: number } = {}) {
+export function face(cx: number, cy: number, s = 1, o: { blush?: boolean; gap?: number } = {}) {
   const g = (o.gap ?? 70) * s;
   const eye = (x: number) =>
     `<ellipse class="k" fill="#222228" cx="${P(x)}" cy="${P(cy)}" rx="${P(20 * s)}" ry="${P(27 * s)}"/>` +
@@ -28,7 +28,7 @@ function face(cx: number, cy: number, s = 1, o: { blush?: boolean; gap?: number 
   return eye(cx - g) + eye(cx + g) + smile + blush;
 }
 
-const shine = (cx: number, cy: number, rx: number, ry: number, rot = -30) =>
+export const shine = (cx: number, cy: number, rx: number, ry: number, rot = -30) =>
   `<ellipse class="s" fill="#fff" opacity=".75" stroke="none" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(${rot} ${cx} ${cy})"/>`;
 
 // ------------------------------------------------------------------ level 1 (3½ +)

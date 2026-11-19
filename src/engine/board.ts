@@ -1,12 +1,14 @@
 import { sfx } from './audio';
+import { mulberry32, paintStyle } from './paints';
 import type { Prepared } from './prepare';
 
-export type Tool = 'paint' | 'erase';
+export type Tool = 'paint' | 'erase' | 'spray';
 
 /** The action log is the source of truth for a page: saved, replayed on load, popped by undo. */
 export type Action =
   | { t: 'fill'; r: number; c: string; x: number; y: number; auto?: 1 }
   | { t: 'stroke'; r: number; c: string; w: number; p: number[] }
+  | { t: 'spray'; r: number; c: string; w: number; s: number; p: number[] }
   | { t: 'erase'; r: number };
 
 export interface BoardSettings {
@@ -21,6 +23,8 @@ export interface BoardSettings {
 export interface BoardCallbacks {
   onChange(actions: Action[], done: number, total: number): void;
   onComplete(): void;
+  /** trace step progress 0..1, and when it is finished */
+  onTrace?(progress: number, done: boolean): void;
 }
 
 export interface BoardElements {
@@ -34,12 +38,16 @@ export interface BoardElements {
 }
 
 const CELL = 12; // coverage grid cell, page px
+const TCELL = 10; // trace grid cell, page px
+const TRACE_DONE = 0.88;
 const TAP_SLOP = 8; // css px a press may wander and still count as a tap
 
 interface Bloom { id: number; c: string; cx: number; cy: number; rMax: number; t0: number; dur: number }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; max: number; c: string; s: number }
 
 const easeOut = (k: number) => 1 - (1 - k) ** 3;
+/** rAF timestamps can be a little older than performance.now(), so time fractions can start below 0 */
+const clamp01 = (k: number) => (k < 0 ? 0 : k > 1 ? 1 : k);
 
 export class Board {
   private p!: Prepared;
@@ -70,7 +78,14 @@ export class Board {
   magic = true;
 
   private pointerId: number | null = null;
-  private mode: 'idle' | 'pending' | 'stroke' | 'consumed' | 'erase' = 'idle';
+  private mode: 'idle' | 'pending' | 'stroke' | 'consumed' | 'erase' | 'spray' | 'trace' = 'idle';
+  private spray: { a: Extract<Action, { t: 'spray' }>; rng: () => number } | null = null;
+  private trace: {
+    ink: Uint8Array; revealed: Uint8Array; total: number; got: number; tw: number; th: number;
+    guide: HTMLCanvasElement; mask: HTMLCanvasElement; mctx: CanvasRenderingContext2D; R: number; finishing?: boolean;
+  } | null = null;
+  replaying = false;
+  private skipReplay = false;
   private downClient = { x: 0, y: 0 };
   private downPage = { x: 0, y: 0 };
   private lastPage = { x: 0, y: 0 };
@@ -119,6 +134,8 @@ export class Board {
     this.solid = new Array(n + 1).fill(null);
     this.masks.clear();
     this.hintCanvas = null;
+    this.trace = null;
+    this.replaying = false;
 
     this.gw = Math.ceil(W / CELL);
     this.gh = Math.ceil(H / CELL);
@@ -247,7 +264,7 @@ export class Board {
   private fillFull(id: number, c: string) {
     const r = this.region(id);
     this.paintMasked(id, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0, (s) => {
-      s.fillStyle = c;
+      s.fillStyle = paintStyle(s, c);
       s.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
     });
   }
@@ -269,8 +286,7 @@ export class Board {
       minY = Math.min(minY, pts[i + 1]); maxY = Math.max(maxY, pts[i + 1]);
     }
     this.paintMasked(id, minX - R - 2, minY - R - 2, maxX - minX + 2 * R + 4, maxY - minY + 2 * R + 4, (s) => {
-      s.fillStyle = c;
-      s.strokeStyle = c;
+      s.fillStyle = s.strokeStyle = paintStyle(s, c);
       s.lineWidth = 2 * R;
       s.lineCap = 'round';
       s.lineJoin = 'round';
@@ -350,6 +366,14 @@ export class Board {
       }
       this.hasPaint[id] = 1;
       this.solid[id] = null;
+    } else if (a.t === 'spray') {
+      const rng = mulberry32(a.s), p = a.p;
+      if (p.length >= 2) {
+        this.paintDots(id, a.c, this.sprayDots(rng, a.w, p[0], p[1], p[0], p[1]));
+        for (let i = 2; i < p.length; i += 2) this.paintDots(id, a.c, this.sprayDots(rng, a.w, p[i - 2], p[i - 1], p[i], p[i + 1]));
+      }
+      this.hasPaint[id] = 1;
+      this.solid[id] = null;
     } else {
       this.eraseRegion(id);
       this.setCells(id, 0);
@@ -392,7 +416,7 @@ export class Board {
   }
 
   undo(): boolean {
-    if (!this.actions.length || this.pointerId !== null) return false;
+    if (!this.actions.length || this.pointerId !== null || this.replaying || this.trace) return false;
     this.finishBlooms();
     const a = this.actions.pop()!;
     this.rebuildRegion(a.r);
@@ -452,6 +476,10 @@ export class Board {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     sfx.unlock();
+    if (this.replaying) {
+      this.skipReplay = true;
+      return;
+    }
     this.hintId = 0;
     clearTimeout(this.hintTimer);
     this.pointerId = e.pointerId;
@@ -465,11 +493,38 @@ export class Board {
     this.downPage = pt;
     this.lastPage = pt;
     this.lastClient = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    if (this.trace) {
+      if (this.trace.finishing) return;
+      this.mode = 'trace';
+      this.lastPage = pt;
+      this.traceSegment(pt.x, pt.y, pt.x, pt.y);
+      this.showPen(e, '#222228');
+      sfx.scratchStart();
+      return;
+    }
     if (this.tool === 'erase') {
       this.mode = 'erase';
       this.lastErased = 0;
       this.eraseAt(pt);
       this.showPen(e, '#ffffff');
+      return;
+    }
+    if (this.tool === 'spray') {
+      const id = this.regionAt(pt.x, pt.y);
+      if (!id || this.region(id).fixed) {
+        this.mode = 'consumed';
+        return;
+      }
+      this.finishBlooms(id);
+      const c = this.colorFor(id);
+      const R = Math.max(8, Math.round(this.settings.brushFrac * 1.5 * Math.max(this.W, this.H)));
+      const x = Math.round(pt.x), y = Math.round(pt.y);
+      const seed = (Math.random() * 2 ** 31) | 0;
+      this.spray = { a: { t: 'spray', r: id, c, w: R, s: seed, p: [x, y] }, rng: mulberry32(seed) };
+      this.paintDots(id, c, this.sprayDots(this.spray.rng, R, x, y, x, y));
+      this.mode = 'spray';
+      this.showPen(e, c);
+      sfx.scratchStart();
       return;
     }
     this.mode = 'pending';
@@ -483,6 +538,26 @@ export class Board {
     if (this.mode === 'erase') {
       const pt = this.toPage(e);
       this.eraseAt(pt);
+      return;
+    }
+    if (this.mode === 'trace' || this.mode === 'spray') {
+      const evs = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+      for (const ev of evs.length ? evs : [e]) {
+        const pt = this.toPage(ev);
+        const x = Math.round(pt.x), y = Math.round(pt.y);
+        if (Math.hypot(x - this.lastPage.x, y - this.lastPage.y) < 2) continue;
+        if (this.mode === 'trace') this.traceSegment(this.lastPage.x, this.lastPage.y, x, y);
+        else if (this.spray) {
+          const s = this.spray;
+          this.paintDots(s.a.r, s.a.c, this.sprayDots(s.rng, s.a.w, this.lastPage.x, this.lastPage.y, x, y));
+          s.a.p.push(x, y);
+        }
+        this.lastPage = { x, y };
+        if (this.mode !== 'trace' && this.mode !== 'spray') break; // trace may have just finished
+      }
+      const dt = Math.max(1, e.timeStamp - this.lastClient.t);
+      sfx.scratchSpeed(Math.hypot(e.clientX - this.lastClient.x, e.clientY - this.lastClient.y) / dt);
+      this.lastClient = { x: e.clientX, y: e.clientY, t: e.timeStamp };
       return;
     }
     if (this.mode === 'pending') {
@@ -518,6 +593,13 @@ export class Board {
     this.pointerId = null;
     if (this.mode === 'pending') this.tapFill(this.downPage);
     else if (this.mode === 'stroke') this.endStroke();
+    else if (this.mode === 'spray' && this.spray) {
+      this.actions.push(this.spray.a);
+      this.hasPaint[this.spray.a.r] = 1;
+      this.solid[this.spray.a.r] = null;
+      this.spray = null;
+      this.emitChange();
+    }
     sfx.scratchStop();
     this.mode = 'idle';
     this.pen.hideAt = performance.now() + 200;
@@ -596,7 +678,7 @@ export class Board {
   private bumpIdle() {
     clearTimeout(this.hintTimer);
     this.hintId = 0;
-    if (!this.magic || !this.p || this.destroyed) return;
+    if (!this.magic || !this.p || this.destroyed || this.trace || this.replaying) return;
     this.hintTimer = window.setTimeout(() => {
       const next = this.p.order.find((id) => !this.done[id]);
       if (next && this.pointerId === null) {
@@ -654,10 +736,10 @@ export class Board {
     let ended = false;
     for (let i = this.blooms.length - 1; i >= 0; i--) {
       const b = this.blooms[i];
-      const k = Math.min(1, (now - b.t0) / b.dur);
+      const k = clamp01((now - b.t0) / b.dur);
       const rad = 6 + (b.rMax - 6) * easeOut(k);
       this.paintMasked(b.id, b.cx - rad, b.cy - rad, rad * 2, rad * 2, (s) => {
-        s.fillStyle = b.c;
+        s.fillStyle = paintStyle(s, b.c);
         s.beginPath();
         s.arc(b.cx, b.cy, rad, 0, Math.PI * 2);
         s.fill();
@@ -750,6 +832,272 @@ export class Board {
 
     if (this.blooms.length || this.sparks.length || this.hintId || this.hintShown || pen.vis) this.loop();
   };
+
+
+  // ---------------------------------------------------------------- spray
+
+  private sprayDots(rng: () => number, R: number, ax: number, ay: number, bx: number, by: number) {
+    const len = Math.hypot(bx - ax, by - ay);
+    const n = Math.round(len === 0 ? 34 : 6 + len * 0.9);
+    const sc = Math.max(this.W, this.H) / 1000;
+    const dots: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = rng(), a = rng() * Math.PI * 2, d = R * Math.sqrt(rng()), r = (1.3 + rng() * 2.8) * sc;
+      dots.push(ax + (bx - ax) * t + Math.cos(a) * d, ay + (by - ay) * t + Math.sin(a) * d, r);
+    }
+    return dots;
+  }
+
+  private paintDots(id: number, c: string, dots: number[]) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let i = 0; i < dots.length; i += 3) {
+      minX = Math.min(minX, dots[i]); maxX = Math.max(maxX, dots[i]);
+      minY = Math.min(minY, dots[i + 1]); maxY = Math.max(maxY, dots[i + 1]);
+    }
+    if (!dots.length) return;
+    this.paintMasked(id, minX - 6, minY - 6, maxX - minX + 12, maxY - minY + 12, (s) => {
+      s.fillStyle = paintStyle(s, c);
+      s.beginPath();
+      for (let i = 0; i < dots.length; i += 3) {
+        s.moveTo(dots[i] + dots[i + 2], dots[i + 1]);
+        s.arc(dots[i], dots[i + 1], dots[i + 2], 0, Math.PI * 2);
+      }
+      s.fill();
+    });
+  }
+
+  // ---------------------------------------------------------------- trace step
+
+  get tracing() {
+    return !!this.trace;
+  }
+
+  /** start the "follow the dotted lines" step: outline shows as dots until the child traces it */
+  startTrace() {
+    if (!this.p || this.trace) return;
+    const W = this.W, H = this.H, o = this.p.outline;
+    const tw = Math.ceil(W / TCELL), th = Math.ceil(H / TCELL);
+    const ink = new Uint8Array(tw * th);
+    let total = 0;
+    for (let gy = 0; gy < th; gy++) {
+      for (let gx = 0; gx < tw; gx++) {
+        let hit = false;
+        for (const [dx, dy] of [[5, 5], [2, 2], [8, 2], [2, 8], [8, 8]]) {
+          const x = Math.min(W - 1, gx * TCELL + dx), y = Math.min(H - 1, gy * TCELL + dy);
+          if (o[(y * W + x) * 4 + 3] > 150) { hit = true; break; }
+        }
+        if (hit) { ink[gy * tw + gx] = 1; total++; }
+      }
+    }
+    if (!total) return;
+    // dotted guide = outline kept only where a dot pattern is
+    const guide = document.createElement('canvas');
+    guide.width = W;
+    guide.height = H;
+    const g = guide.getContext('2d')!;
+    g.drawImage(this.p.outlineCanvas, 0, 0);
+    const dot = document.createElement('canvas');
+    dot.width = dot.height = 16;
+    const d = dot.getContext('2d')!;
+    d.beginPath();
+    d.arc(8, 8, 4.5, 0, Math.PI * 2);
+    d.fill();
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = g.createPattern(dot, 'repeat')!;
+    g.fillRect(0, 0, W, H);
+    const mask = document.createElement('canvas');
+    mask.width = W;
+    mask.height = H;
+    const R = Math.round(Math.max(W, H) * (this.settings.brushFrac > 0.05 ? 0.045 : 0.032));
+    this.trace = { ink, revealed: new Uint8Array(tw * th), total, got: 0, tw, th, guide, mask, mctx: mask.getContext('2d')!, R };
+    this.traceRedraw(0, 0, W, H);
+    this.hintId = 0;
+    this.cb.onTrace?.(0, false);
+  }
+
+  /** test hook: centres of the outline cells a child has to trace */
+  traceTargets(): [number, number][] {
+    const t = this.trace;
+    if (!t) return [];
+    const out: [number, number][] = [];
+    for (let i = 0; i < t.ink.length; i++) if (t.ink[i]) out.push([(i % t.tw) * TCELL + 5, ((i / t.tw) | 0) * TCELL + 5]);
+    return out;
+  }
+
+  private traceRedraw(x0: number, y0: number, x1: number, y1: number) {
+    const t = this.trace!;
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+    x1 = Math.min(this.W, Math.ceil(x1)); y1 = Math.min(this.H, Math.ceil(y1));
+    const w = x1 - x0, h = y1 - y0;
+    if (w <= 0 || h <= 0) return;
+    const o = this.els.outline.getContext('2d')!, s = this.sctx;
+    s.save();
+    s.beginPath(); s.rect(x0, y0, w, h); s.clip();
+    s.clearRect(x0, y0, w, h);
+    s.drawImage(this.p.outlineCanvas, 0, 0);
+    s.globalCompositeOperation = 'destination-in';
+    s.drawImage(t.mask, 0, 0);
+    s.restore();
+    o.clearRect(x0, y0, w, h);
+    o.globalAlpha = 0.6;
+    o.drawImage(t.guide, x0, y0, w, h, x0, y0, w, h);
+    o.globalAlpha = 1;
+    o.drawImage(this.scratch, x0, y0, w, h, x0, y0, w, h);
+  }
+
+  private traceSegment(ax: number, ay: number, bx: number, by: number) {
+    const t = this.trace;
+    if (!t) return;
+    const R = t.R, m = t.mctx;
+    m.strokeStyle = m.fillStyle = '#000';
+    m.lineWidth = R * 2;
+    m.lineCap = 'round';
+    m.beginPath();
+    if (ax === bx && ay === by) { m.arc(ax, ay, R, 0, Math.PI * 2); m.fill(); }
+    else { m.moveTo(ax, ay); m.lineTo(bx, by); m.stroke(); }
+    const gx0 = Math.max(0, Math.floor((Math.min(ax, bx) - R) / TCELL)), gx1 = Math.min(t.tw - 1, Math.floor((Math.max(ax, bx) + R) / TCELL));
+    const gy0 = Math.max(0, Math.floor((Math.min(ay, by) - R) / TCELL)), gy1 = Math.min(t.th - 1, Math.floor((Math.max(ay, by) + R) / TCELL));
+    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+      const c = gy * t.tw + gx;
+      if (!t.ink[c] || t.revealed[c]) continue;
+      const px = gx * TCELL + 5, py = gy * TCELL + 5;
+      let k = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+      k = k < 0 ? 0 : k > 1 ? 1 : k;
+      if ((ax + k * dx - px) ** 2 + (ay + k * dy - py) ** 2 > R * R) continue;
+      t.revealed[c] = 1;
+      t.got++;
+    }
+    this.traceRedraw(Math.min(ax, bx) - R - 2, Math.min(ay, by) - R - 2, Math.max(ax, bx) + R + 2, Math.max(ay, by) + R + 2);
+    const frac = t.got / t.total;
+    this.cb.onTrace?.(frac, false);
+    if (frac >= TRACE_DONE) this.finishTrace(true, bx, by);
+  }
+
+  /** complete the trace step (animate = sweep the rest of the outline in) */
+  finishTrace(animate = false, x = this.W / 2, y = this.H / 2) {
+    const t = this.trace;
+    if (!t || t.finishing) return;
+    t.finishing = true;
+    sfx.scratchStop();
+    if (this.mode === 'trace') this.mode = 'consumed';
+    const done = () => {
+      this.trace = null;
+      const o = this.els.outline.getContext('2d')!;
+      o.clearRect(0, 0, this.W, this.H);
+      o.drawImage(this.p.outlineCanvas, 0, 0);
+      for (let i = 0; i < 6; i++) this.sparkle(this.W * (0.2 + 0.6 * Math.random()), this.H * (0.2 + 0.6 * Math.random()), '#ffd54f', 6);
+      sfx.sparkle();
+      sfx.pop(0.4);
+      this.loop();
+      this.cb.onTrace?.(1, true);
+      this.bumpIdle();
+    };
+    if (!animate) return done();
+    const rMax = Math.hypot(Math.max(x, this.W - x), Math.max(y, this.H - y));
+    const t0 = performance.now();
+    const step = (now: number) => {
+      if (this.destroyed || !this.trace) return;
+      const k = clamp01((now - t0) / 450);
+      try {
+        t.mctx.beginPath();
+        t.mctx.arc(x, y, Math.max(1, rMax * easeOut(k)), 0, Math.PI * 2);
+        t.mctx.fill();
+        this.traceRedraw(0, 0, this.W, this.H);
+      } catch {
+        return done(); // never leave the child stuck on the dotted lines
+      }
+      if (k < 1) requestAnimationFrame(step);
+      else done();
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ---------------------------------------------------------------- time-lapse replay
+
+  private redrawAll() {
+    this.cctx.clearRect(0, 0, this.W, this.H);
+    this.done.fill(0);
+    this.hasPaint.fill(0);
+    this.solid.fill(null);
+    this.cellColor.fill(0);
+    for (const a of this.actions) this.applyInstant(a);
+  }
+
+  private animate(ms: number, step: (k: number) => void): Promise<void> {
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      const f = (now: number) => {
+        if (this.destroyed || this.skipReplay) return resolve();
+        const k = clamp01((now - t0) / ms);
+        step(k);
+        if (k < 1) requestAnimationFrame(f);
+        else resolve();
+      };
+      requestAnimationFrame(f);
+    });
+  }
+
+  /** replays the whole page as a time-lapse (tap to skip); ends in exactly the saved state */
+  async replay(): Promise<void> {
+    if (this.replaying || this.trace || !this.actions.length) return;
+    this.finishBlooms();
+    this.replaying = true;
+    this.skipReplay = false;
+    this.hintId = 0;
+    const acts = this.actions.slice();
+    this.cctx.clearRect(0, 0, this.W, this.H);
+    const per = Math.max(90, Math.min(420, 7000 / acts.length));
+    for (const a of acts) {
+      if (this.skipReplay || this.destroyed) break;
+      const r = this.region(a.r);
+      if (!r) continue;
+      if (a.t === 'fill') {
+        const rMax = Math.max(Math.hypot(a.x - r.x0, a.y - r.y0), Math.hypot(a.x - r.x1, a.y - r.y1), Math.hypot(a.x - r.x1, a.y - r.y0), Math.hypot(a.x - r.x0, a.y - r.y1));
+        await this.animate(Math.min(per, 320), (k) => {
+          const rad = 4 + rMax * easeOut(k);
+          this.paintMasked(a.r, a.x - rad, a.y - rad, rad * 2, rad * 2, (s) => {
+            s.fillStyle = paintStyle(s, a.c);
+            s.beginPath();
+            s.arc(a.x, a.y, rad, 0, Math.PI * 2);
+            s.fill();
+          });
+        });
+        this.fillFull(a.r, a.c);
+        this.sparkle(r.ax, r.ay, a.c, 6);
+        sfx.pop(r.area / (this.W * this.H));
+        this.loop();
+      } else if (a.t === 'stroke') {
+        const n = a.p.length / 2;
+        let drawn = 1;
+        this.paintPolyline(a.r, a.c, a.w, a.p.slice(0, 2));
+        await this.animate(per, (k) => {
+          const upto = Math.max(1, Math.round(n * k));
+          if (upto > drawn) {
+            this.paintPolyline(a.r, a.c, a.w, a.p.slice((drawn - 1) * 2, upto * 2));
+            drawn = upto;
+          }
+        });
+      } else if (a.t === 'spray') {
+        const rng = mulberry32(a.s), segs: number[][] = [this.sprayDots(rng, a.w, a.p[0], a.p[1], a.p[0], a.p[1])];
+        for (let i = 2; i < a.p.length; i += 2) segs.push(this.sprayDots(rng, a.w, a.p[i - 2], a.p[i - 1], a.p[i], a.p[i + 1]));
+        let drawn = 0;
+        await this.animate(per, (k) => {
+          const upto = Math.round(segs.length * k);
+          for (; drawn < upto; drawn++) this.paintDots(a.r, a.c, segs[drawn]);
+        });
+      } else {
+        this.eraseRegion(a.r);
+        this.sparkle(r.ax, r.ay, '#ffffff', 8);
+        this.loop();
+        await this.animate(per / 2, () => undefined);
+      }
+    }
+    this.redrawAll();
+    this.replaying = false;
+    this.skipReplay = false;
+    this.bumpIdle();
+  }
 
   // ---------------------------------------------------------------- export
 

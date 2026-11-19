@@ -85,7 +85,8 @@ try {
   await page.waitForSelector('[data-testid=page-apple]');
   await shot('02-home-little');
   const littleCount = await page.locator('.card').count();
-  check('little sees only easy pictures (incl. 1 surprise)', littleCount === 17, `${littleCount} cards`);
+  check('little sees only easy pictures (incl. 2 surprises)', littleCount === 37, `${littleCount} cards`);
+  check('no pattern pages for the 3-year-old', (await page.locator('[data-testid=theme-patterns]').count()) === 0);
 
   await page.tap('[data-testid=page-apple]');
   await ready();
@@ -405,9 +406,18 @@ try {
   await page.waitForSelector('[data-testid=kid-little]');
   check('settings persist', (await page.textContent('[data-testid=kid-little]')).includes('Mini'));
 
-  // ---------- a busier picture for the 7-year-old ----------
+  // ---------- a busier picture for the 7-year-old, found through the theme row ----------
   await page.tap('[data-testid=kid-big]');
   await page.tap('[data-testid=tab-pictures]');
+  const allCards = await page.locator('.grid.pictures .card').count();
+  await page.tap('[data-testid=theme-vehicles]');
+  const vehicleCards = await page.locator('.grid.pictures .card').count();
+  await shot('24-theme-vehicles');
+  await page.tap('[data-testid=theme-patterns]');
+  const patternCards = await page.locator('.grid.pictures .card').count();
+  await shot('25-theme-patterns');
+  check('theme row filters the pictures', allCards === 82 && vehicleCards === 13 && patternCards === 10, `${allCards} all, ${vehicleCards} vehicles, ${patternCards} patterns`);
+  await page.tap('[data-testid=theme-all]');
   await page.tap('[data-testid=page-owl]');
   await ready();
   await shot('12-owl-trace');

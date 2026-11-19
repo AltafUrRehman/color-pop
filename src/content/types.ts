@@ -1,5 +1,8 @@
 export type Level = 1 | 2 | 3;
 
+/** picture themes, for the filter row on the pictures tab */
+export type Theme = 'animals' | 'vehicles' | 'fairy' | 'space' | 'patterns' | 'fun';
+
 /** A hand-drawn picture: inner SVG on a 1000x1000 viewBox.
  *  - class "c": colourable shape; its fill is the "magic" target colour
  *  - class "k": black detail (eyes, mouths) — part of the lines
@@ -16,6 +19,7 @@ export interface PictureDef {
   sw?: number;
   /** surprise page: stars needed to unlock */
   surprise?: number;
+  theme?: Theme;
   body: string;
 }
 

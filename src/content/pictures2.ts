@@ -4,16 +4,16 @@ import type { PictureDef } from './types';
 // Second batch of pictures. Same conventions as pictures.ts, plus class "t" for
 // "top stickers" that must sit above black shapes (eyes on a ladybug's head).
 
-const eyesOnBlack = (cx: number, cy: number, gap: number, r: number) =>
+export const eyesOnBlack = (cx: number, cy: number, gap: number, r: number) =>
   [-1, 1].map((d) =>
     `<circle class="t" fill="#fff" stroke="none" cx="${cx + d * gap}" cy="${cy}" r="${r}"/>` +
     `<circle class="t" fill="#222228" stroke="none" cx="${cx + d * gap + 3}" cy="${cy + 4}" r="${P(r * 0.48)}"/>` +
     `<circle class="t" fill="#fff" stroke="none" cx="${cx + d * gap + 6}" cy="${cy - 1}" r="${P(r * 0.2)}"/>`).join('');
 
-const stickerDots = (pts: [number, number][], fill: string, rx: number, ry: number) =>
+export const stickerDots = (pts: [number, number][], fill: string, rx: number, ry: number) =>
   `<g class="s" fill="${fill}" stroke="none">${pts.map(([x, y], i) => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" transform="rotate(${(i * 37) % 60 - 30} ${x} ${y})"/>`).join('')}</g>`;
 
-const cloud = (cx: number, cy: number, s: number, fill = '#ffffff') =>
+export const cloud = (cx: number, cy: number, s: number, fill = '#ffffff') =>
   `<path class="c" fill="${fill}" d="M${P(cx - 110 * s)},${P(cy + 30 * s)} C${P(cx - 150 * s)},${P(cy + 30 * s)} ${P(cx - 150 * s)},${P(cy - 30 * s)} ${P(cx - 100 * s)},${P(cy - 30 * s)} C${P(cx - 90 * s)},${P(cy - 80 * s)} ${P(cx - 20 * s)},${P(cy - 90 * s)} ${P(cx)},${P(cy - 50 * s)} C${P(cx + 30 * s)},${P(cy - 100 * s)} ${P(cx + 110 * s)},${P(cy - 80 * s)} ${P(cx + 100 * s)},${P(cy - 25 * s)} C${P(cx + 150 * s)},${P(cy - 25 * s)} ${P(cx + 150 * s)},${P(cy + 30 * s)} ${P(cx + 105 * s)},${P(cy + 30 * s)} Z"/>`;
 
 // ------------------------------------------------------------------ level 1

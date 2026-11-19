@@ -1,14 +1,14 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { isLocked, pagesFor, type Category } from '../content';
-import type { DrawingDef, PageDef } from '../content/types';
+import { isLocked, pagesFor, THEMES, themeOf, type Category } from '../content';
+import type { DrawingDef, PageDef, Theme } from '../content/types';
 import { flagSize, flagSvg, pictureSvg, svgUrl } from '../engine/prepare';
 import { say } from '../engine/speech';
 import type { Profile } from '../profiles';
 import { useSettings } from '../settings';
 import { entries } from '../storage/db';
 import type { SavedPage } from './Coloring';
-import { Avatar, CrayonIcon, FlagIcon, GalleryIcon, LockIcon, MineIcon, PlayIcon, SoundIcon, StarIcon } from './icons';
+import { Avatar, CrayonIcon, FlagIcon, GalleryIcon, LockIcon, MineIcon, PlayIcon, SoundIcon, StarIcon, ThemeIcon } from './icons';
 import { MyDrawings } from './MyDrawings';
 
 interface Props {
@@ -22,6 +22,9 @@ interface Props {
   stars: number;
 }
 
+/** last picked theme per kid, kept while the app is open */
+const lastTheme: Record<string, Theme | 'all'> = {};
+
 export function previewUrl(def: PageDef): string {
   if (def.kind === 'picture') return svgUrl(pictureSvg(def, 'line', 300));
   if (def.kind === 'flag') {
@@ -33,7 +36,14 @@ export function previewUrl(def: PageDef): string {
 
 export function Home({ profile, category, setCategory, onOpen, onSwitchKid, drawings, onDrawingsChanged, stars }: Props) {
   const { settings, update } = useSettings();
-  const pages = useMemo(() => (category === 'pictures' || category === 'flags' ? pagesFor(category, profile.maxLevel) : []), [category, profile.maxLevel]);
+  const [theme, setThemeState] = useState<Theme | 'all'>(lastTheme[profile.id] ?? 'all');
+  const setTheme = (t: Theme | 'all') => {
+    lastTheme[profile.id] = t;
+    setThemeState(t);
+  };
+  const allPages = useMemo(() => (category === 'pictures' || category === 'flags' ? pagesFor(category, profile.maxLevel) : []), [category, profile.maxLevel]);
+  const themes = useMemo(() => THEMES.filter((t) => allPages.some((p) => p.kind === 'picture' && themeOf(p) === t.id)), [allPages]);
+  const pages = category === 'pictures' && theme !== 'all' ? allPages.filter((p) => themeOf(p) === theme) : allPages;
   const [saved, setSaved] = useState<Record<string, SavedPage>>({});
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
@@ -112,6 +122,26 @@ export function Home({ profile, category, setCategory, onOpen, onSwitchKid, draw
             </button>
           ))}
         </main>
+      )}
+
+      {category === 'pictures' && (
+        <nav className="themes" aria-label="Themes">
+          {[{ id: 'all' as const, name: 'All' }, ...themes].map((t) => (
+            <button
+              key={t.id}
+              className={`theme ${theme === t.id ? 'on' : ''}`}
+              onClick={() => {
+                setTheme(t.id);
+                if (settings.speak) say(t.name);
+              }}
+              aria-label={t.name}
+              data-testid={`theme-${t.id}`}
+            >
+              <ThemeIcon theme={t.id} />
+              {profile.showNames && <span>{t.name}</span>}
+            </button>
+          ))}
+        </nav>
       )}
 
       {(category === 'pictures' || category === 'flags') && (

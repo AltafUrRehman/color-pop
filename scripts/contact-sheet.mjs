@@ -1,9 +1,14 @@
 // Renders every picture (coloured "answer key" and line-art version) into one PNG for a quick visual check.
 import { Resvg } from '@resvg/resvg-js';
 import { writeFileSync } from 'node:fs';
-const { PICTURES: A } = await import('../src/content/pictures.ts');
-const { MORE_PICTURES: B } = await import('../src/content/pictures2.ts');
-const PICTURES = process.argv[4] === 'new' ? B : [...A, ...B];
+// usage: node scripts/contact-sheet.mjs color|line out.png [all|p1|p2|p3|p4|mandalas]
+const load = async (f, k) => { try { return (await import(`../src/content/${f}.ts`))[k]; } catch { return []; } };
+const SETS = {
+  p1: await load('pictures', 'PICTURES'), p2: await load('pictures2', 'MORE_PICTURES'), p3: await load('pictures3', 'PICTURES3'),
+  p4: await load('pictures4', 'PICTURES4'), mandalas: await load('mandalas', 'MANDALAS'),
+};
+const which = process.argv[4] ?? 'all';
+const PICTURES = which === 'all' ? Object.values(SETS).flat() : which === 'new' ? SETS.p2 : SETS[which];
 const mode = process.argv[2] ?? 'color';
 const out = process.argv[3] ?? 'sheet.png';
 const cell = 260, cols = 6, rows = Math.ceil(PICTURES.length / cols);

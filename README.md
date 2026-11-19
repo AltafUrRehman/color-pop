@@ -8,7 +8,7 @@ It's a web app you install from Chrome (a PWA). It is one self-contained HTML fi
 
 | | 🐥 **Ibrahim** (3½) | 🦁 **Fatima** (7) |
 |---|---|---|
-| Pages | 17 simple pictures + 22 simple flags | all 32 pictures + 40 flags |
+| Pages | 37 simple pictures + 22 simple flags | all 82 pictures (incl. 10 mandalas) + 40 flags |
 | First step | straight to colouring | **trace the dotted lines**, then colour (skip button ⏭) |
 | Colours | **Magic** on: the marker picks the right colour | free colours; the 🪄 button turns Magic on |
 | Tap | colour blooms out from the finger | same |
@@ -23,12 +23,16 @@ It's a web app you install from Chrome (a PWA). It is one self-contained HTML fi
 |---|---|
 | 2, 4, 6, 8 | Rainbow, gold glitter, polka dots, pink glitter markers |
 | 3 | 🦄 Unicorn page |
+| 5 | 🛸 Flying saucer page |
 | 7 | 🐉 Dragon page (7+) |
+| 9 | 🧜 Mermaid page (7+) |
 | 11, 14, 17, 20 | Candy stripes, hearts, stars, galaxy markers |
 | 12 | 🎈 Hot-air balloon page (7+) |
+| 15 | 🎃 Pumpkin carriage page (7+) |
 
 **Also in the app:**
 
+- **Themes:** a row above the pictures filters them: animals, vehicles, fairy tale, space & dinosaurs, patterns (mandalas, 7+ only) and fun stuff.
 - **My drawings** (📝 tab): the kid draws on paper with a dark pen or crayon. Take a photo with the Chromebook camera, or choose a picture file. The app cleans it up into line art and turns it into a page to colour. Hold 🗑 on a drawing for 1.5 s to delete it.
 - **Gallery** (🖼 tab): everything they have coloured. Tap a picture to watch a time-lapse replay of how it was painted (tap the page to skip). The celebration screen has the same ▶ button.
 - Progress saves automatically for each kid, and pages can be reopened and recoloured.
@@ -69,7 +73,7 @@ If installing is blocked on a supervised account, use **⋮ → Cast, save and s
 
 ## Add or change pages
 
-**Pictures** live in `src/content/pictures.ts` and `src/content/pictures2.ts`. Each one is SVG on a 1000×1000 canvas:
+**Pictures** live in `src/content/pictures.ts`, `pictures2.ts`, `pictures3.ts` (simple pages) and `pictures4.ts` (detailed pages); the mandalas are generated in `mandalas.ts`. Each picture is SVG on a 1000×1000 canvas:
 
 - `class="c"`: a colourable shape. Its `fill` is the colour Magic mode uses.
 - `class="k"`: a black detail (eyes, nose). It counts as part of the lines.
@@ -78,10 +82,11 @@ If installing is blocked on a supervised account, use **⋮ → Cast, save and s
 - `level`: 1 = shown to the 3+ player (keep it to ≤ 10 big regions); 2–3 = 7+ only.
 - `bg`: the colour Magic mode uses for the background.
 - `surprise: N` (optional): the page stays locked until the kid has N stars.
+- `theme`: which filter it shows under (`animals`, `vehicles`, `fairy`, `space`, `patterns`, `fun`).
 
 Overlapping shapes are fine: the regions come from the visible lines. For a stripe inside a body, clip it to the body and re-stroke the body outline (see the fish and the rocket).
 
-To preview the art run `node scripts/contact-sheet.mjs color sheet.png` (or `line`; add `new` to show only `pictures2.ts`).
+To preview the art run `node scripts/contact-sheet.mjs color sheet.png p3` (or `line`; the last word picks the set: `p1`–`p4`, `mandalas` or `all`). To check how pages split into regions, run `npm run build && node scripts/region-sheet.mjs regions.png all3` (or page ids): every region gets its own colour, and a red label marks a level-1 page with a region too small for little fingers.
 
 **Flags** live in `src/content/flags.ts`. Add one import from `flag-icons` and one line. Flags with text or detailed coats of arms make poor pages.
 
@@ -103,7 +108,7 @@ To preview the art run `node scripts/contact-sheet.mjs color sheet.png` (or `lin
 
 ```bash
 npm test                       # unit tests: segmentation, zip export, photo -> line art
-npm run build && npm run e2e   # real Chrome, 36 checks: painting, trace, spray, unlocks, replay,
+npm run build && npm run e2e   # real Chrome, 39 checks: painting, trace, spray, unlocks, replay, themes,
                                # photographed drawing, parent area + export, reload, offline
 # on a Mac: CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm run e2e
 ```

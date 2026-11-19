@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ALL_PICTURES } from '../content';
+import { ALL_PICTURES, themeOf } from '../content';
 import type { PageDef } from '../content/types';
 import { sfx } from '../engine/audio';
 import { Board, type Action, type Tool } from '../engine/board';
@@ -163,7 +163,8 @@ export function Coloring({ profile, def, stars, onEarned, autoReplay, onHome, on
       setProgress(board.progress);
       setCanUndo(board.actions.length > 0);
       setReady(true);
-      if (def.kind === 'picture' && settings.trace[profile.id] && !traced.current && !board.actions.length) {
+      // tracing a whole mandala would be a chore, so patterns skip the trace step
+      if (def.kind === 'picture' && themeOf(def) !== 'patterns' && settings.trace[profile.id] && !traced.current && !board.actions.length) {
         board.startTrace();
         setTracing(board.tracing);
       }

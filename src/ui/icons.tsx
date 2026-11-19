@@ -213,3 +213,70 @@ export const BackIcon = () => (
     <path d="M30 10 16 24l14 14" strokeWidth={6} />
   </S>
 );
+
+// ---------- picture themes (filter row on the pictures tab)
+const T = ({ children }: { children: ReactNode }) => (
+  <svg width="40" height="40" viewBox="0 0 48 48" stroke="#333" strokeWidth="2" strokeLinejoin="round" aria-hidden>
+    {children}
+  </svg>
+);
+
+export const ThemeIcon = ({ theme }: { theme: string }) => {
+  switch (theme) {
+    case 'animals':
+      return (
+        <T>
+          <ellipse cx="24" cy="32" rx="11" ry="9" fill="#a1887f" />
+          {[[11, 21], [19, 13], [29, 13], [37, 21]].map(([x, y]) => <ellipse key={x} cx={x} cy={y} rx="4.5" ry="5.5" fill="#a1887f" />)}
+        </T>
+      );
+    case 'vehicles':
+      return (
+        <T>
+          <path d="M6 31v-7l5-9h20l6 9h5v7Z" fill="#e53935" />
+          <path d="M14 17h7v7h-10ZM24 17h6l4 7H24Z" fill="#b3e5fc" />
+          <circle cx="15" cy="32" r="5" fill="#333" /><circle cx="34" cy="32" r="5" fill="#333" />
+        </T>
+      );
+    case 'fairy':
+      return (
+        <T>
+          <path d="M8 36 5 14l10 9 9-14 9 14 10-9-3 22Z" fill="#fdd835" />
+          <path d="M8 36h32v5H8Z" fill="#ffb300" />
+          <circle cx="24" cy="29" r="3" fill="#e53935" />
+        </T>
+      );
+    case 'space':
+      return (
+        <T>
+          <path d="M24 4c8 6 10 16 7 28H17C14 20 16 10 24 4Z" fill="#eceff1" />
+          <circle cx="24" cy="18" r="4" fill="#4fc3f7" />
+          <path d="M17 26l-6 8 7 1M31 26l6 8-7 1" fill="#e53935" />
+          <path d="M20 33l4 10 4-10Z" fill="#ff9800" />
+        </T>
+      );
+    case 'patterns':
+      return (
+        <T>
+          {[0, 60, 120, 180, 240, 300].map((a) => <ellipse key={a} cx="24" cy="12" rx="5" ry="9" fill={a % 120 ? '#ce93d8' : '#f48fb1'} transform={`rotate(${a} 24 24)`} />)}
+          <circle cx="24" cy="24" r="6" fill="#fdd835" />
+        </T>
+      );
+    case 'fun':
+      return (
+        <T>
+          <path d="M24 36c-2 4 2 6 0 9" fill="none" />
+          <ellipse cx="24" cy="19" rx="12" ry="15" fill="#e53935" />
+          <path d="M21 34h6l-3 3Z" fill="#e53935" />
+          <ellipse cx="19" cy="13" rx="3" ry="5" fill="#fff" stroke="none" opacity=".7" />
+        </T>
+      );
+    default:
+      return (
+        <T>
+          <rect x="5" y="5" width="17" height="17" rx="4" fill="#e53935" /><rect x="26" y="5" width="17" height="17" rx="4" fill="#fdd835" />
+          <rect x="5" y="26" width="17" height="17" rx="4" fill="#43a047" /><rect x="26" y="26" width="17" height="17" rx="4" fill="#1e88e5" />
+        </T>
+      );
+  }
+};

@@ -1047,3 +1047,39 @@ img {
 .cele-actions {
   gap: 18px;
 }
+
+/* ---------- picture themes ---------- */
+.themes {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 0 24px 10px;
+}
+.theme {
+  height: 60px;
+  min-width: 76px;
+  padding: 0 16px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.07);
+}
+.theme.on {
+  background: #fff;
+  outline: 4px solid var(--hi);
+}
+.home.little .theme {
+  height: 70px;
+  min-width: 92px;
+  justify-content: center;
+}
+@media (max-height: 640px) and (orientation: landscape) {
+  .theme {
+    height: 50px;
+  }
+}

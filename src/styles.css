@@ -1,0 +1,553 @@
+:root {
+  --ink: #2b2b30;
+  --paper: #fffdf8;
+  --hi: #ffb300;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Nunito', 'Google Sans', Roboto, system-ui, sans-serif;
+  background: linear-gradient(160deg, #fff4dc, #ffe4ef 55%, #e3f2fd);
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+/* ---------- shared buttons ---------- */
+.round {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  border-radius: 50%;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.12), 0 8px 18px rgba(0, 0, 0, 0.08);
+  transition: transform 0.08s;
+}
+.round:active {
+  transform: translateY(3px) scale(0.96);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.12);
+}
+.round:disabled {
+  opacity: 0.35;
+}
+.round.on {
+  background: #ffe082;
+  outline: 4px solid var(--hi);
+}
+
+/* ---------- who's playing ---------- */
+.picker {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5vh;
+}
+.logo {
+  font-size: clamp(52px, 9vw, 112px);
+  margin: 0;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-shadow: 0 5px 0 rgba(0, 0, 0, 0.12);
+}
+.logo span {
+  display: inline-block;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  animation: bob 2.4s ease-in-out infinite;
+}
+.logo span:nth-child(odd) {
+  animation-delay: 0.35s;
+}
+.picker-row {
+  display: flex;
+  gap: 6vw;
+}
+.kid {
+  width: 290px;
+  height: 310px;
+  border-radius: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.15), 0 16px 30px rgba(0, 0, 0, 0.12);
+  transition: transform 0.1s;
+}
+.kid:active {
+  transform: translateY(6px) scale(0.97);
+}
+.kid-age {
+  font-size: 44px;
+  font-weight: 900;
+  background: #fff;
+  border-radius: 30px;
+  padding: 0 24px;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.08);
+}
+@keyframes bob {
+  50% {
+    transform: translateY(-8px) rotate(-3deg);
+  }
+}
+
+/* ---------- home ---------- */
+.home {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 22px 10px;
+}
+.avatar-btn {
+  width: 84px;
+  height: 84px;
+  overflow: hidden;
+}
+.tabs {
+  display: flex;
+  gap: 16px;
+  margin: 0 auto;
+}
+.tab {
+  width: 128px;
+  height: 84px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.55);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.08);
+}
+.tab.on {
+  background: #fff;
+  outline: 5px solid var(--hi);
+}
+.stars-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 34px;
+  font-weight: 900;
+  background: #fff;
+  border-radius: 30px;
+  padding: 6px 18px 6px 10px;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.08);
+}
+.grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 24px 36px;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  align-content: start;
+  touch-action: pan-y;
+}
+.home.little .grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 28px;
+}
+.card {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 28px;
+  background: var(--paper);
+  padding: 14px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.1), 0 10px 22px rgba(0, 0, 0, 0.08);
+  transition: transform 0.1s;
+}
+.home.big .card {
+  padding-bottom: 40px;
+}
+.card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.grid.flags .card img {
+  border-radius: 8px;
+  height: auto;
+  max-height: 100%;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.12);
+}
+.card:active {
+  transform: scale(0.96);
+}
+.card.done {
+  outline: 5px solid #ffca28;
+}
+.badge {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.2));
+}
+.card-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 9px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 19px;
+}
+
+/* ---------- colouring ---------- */
+.coloring {
+  height: 100%;
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+}
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  padding: 4px 0;
+}
+.tools .spacer {
+  flex: 1;
+}
+.stage-wrap {
+  flex: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+.sheet {
+  position: relative;
+  /* unpainted paper is a touch darker than white paint, so white fills are visible */
+  background: #f6f1e6 radial-gradient(rgba(0, 0, 0, 0.09) 1.3px, transparent 1.5px) 0 0 / 22px 22px;
+  border-radius: 20px;
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.08), 0 14px 34px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.layer.top {
+  touch-action: none;
+  cursor: crosshair;
+}
+.pen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+  --pen: #e53935;
+  will-change: transform;
+}
+.pen svg {
+  position: absolute;
+  left: -22px;
+  top: -148px;
+  transform-origin: 22px 148px;
+  transform: rotate(28deg);
+  filter: drop-shadow(5px 7px 3px rgba(0, 0, 0, 0.25));
+}
+.progress {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 10px;
+  height: 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+  pointer-events: none;
+}
+.progress div {
+  height: 100%;
+  background: linear-gradient(90deg, #ffca28, #ff7043);
+  border-radius: 6px;
+  transition: width 0.4s;
+}
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #f6f1e6;
+}
+.loading img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.loading .dots {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  display: flex;
+  gap: 10px;
+}
+.loading .dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ff7043;
+  animation: hop 0.9s infinite ease-in-out;
+}
+.loading .dot:nth-child(2) {
+  background: #fdd835;
+  animation-delay: 0.15s;
+}
+.loading .dot:nth-child(3) {
+  background: #29b6f6;
+  animation-delay: 0.3s;
+}
+@keyframes hop {
+  50% {
+    transform: translateY(-24px);
+  }
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.reference {
+  background: #fff;
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  max-width: 156px;
+}
+.reference img {
+  width: 132px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
+}
+.reference span {
+  font-weight: 800;
+  font-size: 17px;
+  text-align: center;
+}
+.palette {
+  display: grid;
+  grid-template-columns: repeat(2, 64px);
+  gap: 12px;
+  align-content: center;
+}
+.swatch {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.15);
+  transition: transform 0.1s;
+}
+.swatch:active {
+  transform: scale(0.92);
+}
+.swatch.sel {
+  transform: scale(1.16);
+  outline: 5px solid var(--ink);
+  outline-offset: 1px;
+}
+.palette.magic-on .swatch {
+  opacity: 0.5;
+}
+.coloring.little .palette {
+  grid-template-columns: repeat(2, 78px);
+  gap: 14px;
+}
+.coloring.little .swatch {
+  width: 78px;
+  height: 78px;
+}
+.coloring.little .round {
+  width: 84px;
+  height: 84px;
+}
+.done-btn {
+  background: #66bb6a;
+  color: #fff;
+}
+.round.magic.on {
+  background: linear-gradient(135deg, #fff59d, #f8bbd0, #b3e5fc);
+  outline: 4px solid #ab47bc;
+  color: #6a1b9a;
+  animation: glow 1.6s infinite;
+}
+@keyframes glow {
+  50% {
+    box-shadow: 0 0 0 9px rgba(171, 71, 188, 0.22), 0 5px 0 rgba(0, 0, 0, 0.12);
+  }
+}
+
+/* ---------- celebration ---------- */
+.celebrate {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 248, 225, 0.55);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  animation: fade 0.25s;
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.cele-card {
+  position: relative;
+  background: #fff;
+  border-radius: 42px;
+  padding: 26px 44px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 14px 0 rgba(0, 0, 0, 0.1), 0 24px 60px rgba(0, 0, 0, 0.18);
+  animation: pop 0.55s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.big-star {
+  animation: spin 1.1s ease-out;
+}
+.cele-name {
+  font-size: 46px;
+  font-weight: 900;
+}
+.cele-actions {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+}
+.round.big {
+  width: 100px;
+  height: 100px;
+}
+.round.go {
+  background: #66bb6a;
+  color: #fff;
+}
+@keyframes pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+@keyframes spin {
+  from {
+    transform: rotate(-220deg) scale(0.2);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- tablet / portrait ---------- */
+@media (orientation: portrait) {
+  .coloring {
+    flex-direction: column;
+  }
+  .tools {
+    flex-direction: row;
+    padding: 0 4px;
+  }
+  .side {
+    flex-direction: row;
+  }
+  .palette,
+  .coloring.little .palette {
+    grid-template-columns: repeat(7, 56px);
+  }
+  .swatch,
+  .coloring.little .swatch {
+    width: 56px;
+    height: 56px;
+  }
+  .reference img {
+    width: 96px;
+  }
+  .picker-row {
+    flex-direction: column;
+    gap: 4vh;
+  }
+}
+
+@media (max-height: 640px) and (orientation: landscape) {
+  .round,
+  .coloring.little .round {
+    width: 60px;
+    height: 60px;
+  }
+  .swatch,
+  .coloring.little .swatch {
+    width: 52px;
+    height: 52px;
+  }
+  .palette,
+  .coloring.little .palette {
+    grid-template-columns: repeat(2, 52px);
+    gap: 9px;
+  }
+  .kid {
+    width: 240px;
+    height: 250px;
+  }
+}
